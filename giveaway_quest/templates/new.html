@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}New giveaway · {{ site_name }}{% endblock %}
+{% block content %}
+<h1 class="text-3xl font-bold mb-2">New giveaway</h1>
+<p class="text-base-content/70 mb-6">The code stays secret on {{ site_name }} and is shown only to the winner. Everything else is public.</p>
+
+<form method="post" action="/new" class="grid gap-6 lg:grid-cols-3">
+  {{ csrf_input | safe }}
+  <div class="lg:col-span-2 space-y-4">
+    <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
+      <legend class="fieldset-legend">What are you giving away?</legend>
+      <label class="floating-label">
+        <span>Title</span>
+        <input name="title" class="input w-full" required maxlength="120" placeholder="Psychonauts 2 (Steam)" value="{{ form.title or '' }}">
+      </label>
+      <label class="floating-label">
+        <span>The code (kept secret)</span>
+        <input name="secret" class="input w-full font-mono" required maxlength="500" placeholder="AAAAA-BBBBB-CCCCC" value="{{ form.secret or '' }}" autocomplete="off">
+      </label>
+      <div data-quest-editor>
+        <div class="flex items-center justify-between mb-1">
+          <span class="text-sm">Quest (optional, the fun part)</span>
+          <div class="join">
+            <button type="button" class="btn btn-xs join-item btn-active" data-quest-tab="write">Write</button>
+            <button type="button" class="btn btn-xs join-item" data-quest-tab="preview">Preview</button>
+          </div>
+        </div>
+        <textarea name="quest" data-quest-input class="textarea w-full" rows="3" maxlength="2000" placeholder="Pet a cat. Take a 20 minute walk. Draw a duck.">{{ form.quest or '' }}</textarea>
+        <div data-quest-preview class="textarea w-full min-h-24 hidden"></div>
+        <p class="label text-xs text-base-content/60">Markdown: **bold**, *italic*, [links](https://…), and lists.</p>
+      </div>
+      <label class="floating-label">
+        <span>Conditions participants must agree to (optional)</span>
+        <textarea name="conditions" class="textarea w-full" rows="3" maxlength="2000" placeholder="Region locked to EU. Please only enter if you'll actually play it.">{{ form.conditions or '' }}</textarea>
+      </label>
+    </fieldset>
+
+    <p class="text-sm text-base-content/60">
+      {{ site_name }} never posts as you. After you create the giveaway you'll get a
+      <strong>Share on Mastodon</strong> button that opens a compose box pre-filled on your own server.
+    </p>
+  </div>
+
+  <div class="space-y-4">
+    <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
+      <legend class="fieldset-legend">Rules</legend>
+      <label class="floating-label">
+        <span>Runs for (hours)</span>
+        <input name="hours" type="number" class="input w-full" min="1" max="2160" required value="{{ form.hours or 72 }}">
+      </label>
+      <p class="label whitespace-normal">24 = one day, 72 = three days, 168 = a week. The winner is drawn automatically.</p>
+      <label class="floating-label">
+        <span>Only accounts on these servers (optional)</span>
+        <input name="allowed_instances" class="input w-full" placeholder="fosstodon.org, mastodon.social" value="{{ form.allowed_instances or '' }}">
+      </label>
+      <label class="floating-label">
+        <span>Minimum account age (days)</span>
+        <input name="min_account_age_days" type="number" class="input w-full" min="0" max="3650" value="{{ form.min_account_age_days or 0 }}">
+      </label>
+      <label class="label cursor-pointer justify-start gap-3">
+        <input type="checkbox" name="listed" class="checkbox" {% if form.listed == 'on' %}checked{% endif %}>
+        <span>Show on the {{ site_name }} front page</span>
+      </label>
+    </fieldset>
+    <button class="btn btn-primary w-full btn-lg">Create giveaway</button>
+  </div>
+</form>
+{% endblock %}

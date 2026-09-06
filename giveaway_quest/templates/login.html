@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Log in · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto card bg-base-100 shadow-sm">
+  <div class="card-body gap-4">
+    <h1 class="card-title text-2xl">Log in with Mastodon</h1>
+    <p class="text-sm text-base-content/70">Type the server your account lives on. You'll be sent there to approve {{ site_name }}, then back here. We only ask to <strong>read your public profile</strong> (server, display name, avatar, account age) &mdash; {{ site_name }} never posts, follows, or sends messages as you.</p>
+    <form method="post" action="/auth/login" class="space-y-3">
+      {{ csrf_input | safe }}
+      <input type="hidden" name="next" value="{{ next }}">
+      <label class="floating-label">
+        <span>Your Mastodon server</span>
+        <input name="instance" class="input w-full" required placeholder="mastodon.social" value="{{ last_instance }}" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
+      </label>
+      <button class="btn btn-primary w-full">Continue</button>
+    </form>
+    <p class="text-xs text-base-content/60">Works with Mastodon and most servers that speak its API (GoToSocial, Akkoma, …).</p>
+  </div>
+</div>
+{% endblock %}

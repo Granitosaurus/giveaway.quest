@@ -1,0 +1,21 @@
+services:
+  app:
+    build: .
+    image: giveaway-quest:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      GQ_DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    expose:
+      - "8000"
+
+  cloudflared:
+    image: docker.io/cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    depends_on:
+      - app

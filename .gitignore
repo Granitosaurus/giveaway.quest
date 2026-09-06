@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+dev-backup-*/
+assets/vendor/
+giveaway_quest/static/app.css
+.pytest_cache/
+.ruff_cache/
+result
+.direnv

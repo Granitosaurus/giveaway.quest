@@ -1,0 +1,11 @@
+# Unused now that Cloudflare Tunnel terminates public TLS (see README's
+# "Deployment sketch"). Kept for reference if this ever moves back to a VPS
+# with a directly-exposed 80/443.
+{
+	email you@example.com
+}
+
+giveaway.quest {
+	encode zstd gzip
+	reverse_proxy app:8000
+}

@@ -1,0 +1,231 @@
+"""HTML pages: front page, giveaway page, create/edit/delete, enter/withdraw, my stuff."""
+
+from __future__ import annotations
+
+from typing import Annotated
+
+from litestar import Request, Router, get, post
+from litestar.di import NamedDependency
+from litestar.enums import RequestEncodingType
+from litestar.exceptions import NotFoundException, PermissionDeniedException
+from litestar.params import Body, FromPath, FromQuery
+from litestar.response import Redirect, Template
+
+from .. import db, mastodon, services
+from ..config import settings
+from ..slugs import SLUG_RE
+from ..web import flash, render, require_login, write_rate_limit
+
+Form = Annotated[dict[str, str], Body(media_type=RequestEncodingType.URL_ENCODED)]
+
+
+def _load(slug: str, user: NamedDependency[dict | None], *, for_owner: bool = False) -> dict:
+    if not SLUG_RE.match(slug):
+        raise NotFoundException()
+    with db.connect() as conn:
+        giveaway = services.get_giveaway(conn, slug)
+    if giveaway is None:
+        raise NotFoundException()
+    is_owner = bool(user) and user["id"] == giveaway["owner_id"]
+    admin = services.is_admin(user)
+    if giveaway["hidden"] and not (is_owner or admin):
+        raise NotFoundException()
+    if for_owner and not (is_owner or admin):
+        raise PermissionDeniedException("Only the host can do that.")
+    return giveaway
+
+
+@get("/", sync_to_thread=True)
+def index(
+    request: Request,
+    user: NamedDependency[dict | None],
+    page: FromQuery[int] = 1,
+    sort: FromQuery[str] = "ending",
+    status: FromQuery[str] = "open",
+    q: FromQuery[str] = "",
+) -> Template:
+    page = max(page, 1)
+    q = q.strip()[:80]
+    if sort not in services.SORTS:
+        sort = "ending"
+    if status not in {"open", "ended", "all"}:
+        status = "open"
+    with db.connect() as conn:
+        giveaways, total = services.list_giveaways(conn, page=page, sort=sort, status=status, q=q)
+    pages = max((total + services.PAGE_SIZE - 1) // services.PAGE_SIZE, 1)
+    return render(
+        request,
+        "index.html",
+        user=user,
+        giveaways=giveaways,
+        total=total,
+        page=page,
+        pages=pages,
+        page_numbers=services.pagination_window(page, pages),
+        sort=sort,
+        status=status,
+        q=q,
+    )
+
+
+@get("/new", guards=[require_login], sync_to_thread=True)
+def new_form(request: Request, user: NamedDependency[dict]) -> Template:
+    return render(request, "new.html", user=user, form={"hours": 72, "listed": "on"})
+
+
+@post("/new", guards=[require_login], sync_to_thread=True, middleware=write_rate_limit)
+def create(request: Request, user: NamedDependency[dict], data: Form) -> Template | Redirect:
+    try:
+        form = services.GiveawayForm.from_form(data)
+    except services.ValidationError as exc:
+        flash(request, str(exc), "error")
+        return render(request, "new.html", status_code=422, user=user, form=data)
+    with db.connect() as conn:
+        giveaway = services.create_giveaway(conn, user, form)
+    flash(request, "Giveaway created. Share the link so people can enter!", "success")
+    return Redirect(f"/{giveaway['slug']}")
+
+
+@post("/quest-preview", guards=[require_login], sync_to_thread=True)
+def quest_preview(data: Form) -> Template:
+    text = (data.get("quest") or "")[: services.TEXT_MAX]
+    return Template("_quest_preview.html", context={"html": services.render_quest_markdown(text)})
+
+
+@get("/mine", guards=[require_login], sync_to_thread=True)
+def mine(request: Request, user: NamedDependency[dict]) -> Template:
+    with db.connect() as conn:
+        hosting, _ = services.list_giveaways(
+            conn, status="all", sort="newest", owner_id=user["id"], include_unlisted=True
+        )
+        entered = conn.execute(
+            services.GIVEAWAY_SELECT
+            + " JOIN entries e ON e.giveaway_id = g.id WHERE e.user_id = ? AND g.hidden = 0"
+            " ORDER BY g.ends_at DESC",
+            (user["id"],),
+        ).fetchall()
+    return render(request, "mine.html", user=user, hosting=hosting, entered=entered)
+
+
+@get("/{slug:str}", sync_to_thread=True)
+def giveaway_page(
+    request: Request, slug: FromPath[str], user: NamedDependency[dict | None]
+) -> Template:
+    giveaway = _load(slug, user)
+    status = services.status_of(giveaway)
+    is_owner = bool(user) and user["id"] == giveaway["owner_id"]
+    is_winner = bool(user) and giveaway["winner_id"] == user["id"]
+    entry = problem = None
+    if user and not is_owner:
+        with db.connect() as conn:
+            entry = services.get_entry(conn, giveaway["id"], user["id"])
+        if not entry:
+            problem = services.eligibility_problem(giveaway, user)
+    if is_winner:
+        with db.connect() as conn:
+            services.mark_secret_viewed(conn, giveaway)
+    share_url = settings.url(f"/{giveaway['slug']}")
+    suggested = services.suggested_post_text(giveaway["title"], giveaway["quest"])
+    toot_text = f"{suggested}\n\n{share_url}"
+    return render(
+        request,
+        "giveaway.html",
+        user=user,
+        g=giveaway,
+        status=status,
+        is_owner=is_owner,
+        is_winner=is_winner,
+        entry=entry,
+        problem=problem,
+        share_url=share_url,
+        toot_text=toot_text,
+        share_mastodon_url=mastodon.share_url(toot_text),
+    )
+
+
+@post("/{slug:str}/enter", guards=[require_login], sync_to_thread=True)
+def enter(
+    request: Request, slug: FromPath[str], user: NamedDependency[dict], data: Form
+) -> Redirect:
+    giveaway = _load(slug, user)
+    try:
+        with db.connect() as conn:
+            services.enter_giveaway(conn, giveaway, user, agreed=data.get("agree") == "on")
+        flash(request, "You're in! Good luck. 🍀", "success")
+    except services.ValidationError as exc:
+        flash(request, str(exc), "error")
+    return Redirect(f"/{slug}")
+
+
+@post("/{slug:str}/withdraw", guards=[require_login], sync_to_thread=True)
+def withdraw(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Redirect:
+    giveaway = _load(slug, user)
+    try:
+        with db.connect() as conn:
+            services.withdraw(conn, giveaway, user)
+        flash(request, "Your entry was removed.", "info")
+    except services.ValidationError as exc:
+        flash(request, str(exc), "error")
+    return Redirect(f"/{slug}")
+
+
+@get("/{slug:str}/edit", guards=[require_login], sync_to_thread=True)
+def edit_form(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Template:
+    giveaway = _load(slug, user, for_owner=True)
+    return render(request, "edit.html", user=user, g=giveaway, status=services.status_of(giveaway))
+
+
+@post("/{slug:str}/edit", guards=[require_login], sync_to_thread=True)
+def edit(
+    request: Request, slug: FromPath[str], user: NamedDependency[dict], data: Form
+) -> Template | Redirect:
+    giveaway = _load(slug, user, for_owner=True)
+    if giveaway["drawn_at"]:
+        flash(request, "This giveaway has already been drawn and can't be edited.", "error")
+        return Redirect(f"/{slug}")
+    try:
+        with db.connect() as conn:
+            services.update_giveaway(conn, giveaway, data)
+    except services.ValidationError as exc:
+        flash(request, str(exc), "error")
+        return render(
+            request,
+            "edit.html",
+            status_code=422,
+            user=user,
+            g={**giveaway, **data},
+            status=services.status_of(giveaway),
+        )
+    flash(request, "Giveaway updated.", "success")
+    return Redirect(f"/{slug}")
+
+
+@post("/{slug:str}/delete", guards=[require_login], sync_to_thread=True)
+def delete(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Redirect:
+    giveaway = _load(slug, user, for_owner=True)
+    with db.connect() as conn:
+        services.delete_giveaway(conn, giveaway["id"])
+    flash(
+        request,
+        "Giveaway deleted. The Mastodon post (if any) is still up; delete it there.",
+        "info",
+    )
+    return Redirect("/mine")
+
+
+router = Router(
+    path="",
+    route_handlers=[
+        index,
+        new_form,
+        create,
+        quest_preview,
+        mine,
+        giveaway_page,
+        enter,
+        withdraw,
+        edit_form,
+        edit,
+        delete,
+    ],
+)
