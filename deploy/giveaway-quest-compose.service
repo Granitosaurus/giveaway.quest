@@ -1,0 +1,15 @@
+[Unit]
+Description=giveaway.quest (podman-compose: app + cloudflared)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=%h/projects/giveaway-quest
+ExecStart=/run/current-system/sw/bin/uv run invoke up
+ExecStop=/run/current-system/sw/bin/uv run invoke down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=default.target

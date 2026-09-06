@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · {{ site_name }}{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto card bg-base-100 shadow-sm">
+  <div class="card-body items-center text-center">
+    <h1 class="text-5xl font-bold">{{ code }}</h1>
+    <p>{% if code == 404 %}That giveaway doesn't exist (or was removed).{% else %}{{ detail }}{% endif %}</p>
+    <a href="/" class="btn btn-sm mt-2">Back to giveaways</a>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,22 @@
+[Unit]
+# Bare-metal alternative to the Docker Compose deploy (see README's
+# "Deployment sketch"). Not needed if you're running via docker-compose.yml.
+Description=giveaway.quest web app
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=giveaway
+WorkingDirectory=/opt/giveaway-quest
+EnvironmentFile=/opt/giveaway-quest/.env
+ExecStart=/opt/giveaway-quest/.venv/bin/gq serve --host 127.0.0.1 --port 8000
+Restart=always
+RestartSec=3
+# hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/giveaway-quest
+
+[Install]
+WantedBy=multi-user.target
