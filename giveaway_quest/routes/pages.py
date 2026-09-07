@@ -86,12 +86,10 @@ def create(request: Request, user: NamedDependency[dict], data: Form) -> Templat
     return Redirect(f"/{giveaway['slug']}")
 
 
-@post("/quest-preview", guards=[require_login], sync_to_thread=True)
-def quest_preview(data: Form) -> Template:
-    text = (data.get("quest") or "")[: services.TEXT_MAX]
-    return Template(
-        "_quest_preview.html.jinja", context={"html": services.render_quest_markdown(text)}
-    )
+@post("/md-preview", guards=[require_login], sync_to_thread=True)
+def md_preview(data: Form) -> Template:
+    text = (data.get("text") or "")[: services.TEXT_MAX]
+    return Template("_md_preview.html.jinja", context={"html": services.render_markdown(text)})
 
 
 @get("/mine", guards=[require_login], sync_to_thread=True)
@@ -125,7 +123,7 @@ def giveaway_page(
             problem = services.eligibility_problem(giveaway, user)
     if is_winner:
         with db.connect() as conn:
-            services.mark_secret_viewed(conn, giveaway)
+            services.mark_reward_viewed(conn, giveaway)
     share_url = settings.url(f"/{giveaway['slug']}")
     suggested = services.suggested_post_text(giveaway["title"], giveaway["quest"])
     toot_text = f"{suggested}\n\n{share_url}"
@@ -223,7 +221,7 @@ router = Router(
         index,
         new_form,
         create,
-        quest_preview,
+        md_preview,
         mine,
         giveaway_page,
         enter,

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS giveaways (
     slug                 TEXT NOT NULL UNIQUE,
     owner_id             INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     title                TEXT NOT NULL,
-    secret               TEXT NOT NULL,          -- the code being given away
+    reward               TEXT NOT NULL,          -- host Markdown, winner-only
     conditions           TEXT NOT NULL DEFAULT '',
     quest                TEXT NOT NULL DEFAULT '',
     allowed_instances    TEXT NOT NULL DEFAULT '', -- comma separated, '' = everyone
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS giveaways (
     drawn_at             TEXT,
     winner_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
     winner_notified_at   TEXT,
-    secret_viewed_at     TEXT
+    reward_viewed_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS giveaways_ends_at ON giveaways (ends_at);
 CREATE INDEX IF NOT EXISTS giveaways_owner ON giveaways (owner_id);
@@ -93,7 +93,7 @@ def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 def _migrate(conn: sqlite3.Connection, version: int) -> None:
@@ -103,6 +103,13 @@ def _migrate(conn: sqlite3.Connection, version: int) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(users)")}
         if "access_token" in columns:
             conn.execute("ALTER TABLE users DROP COLUMN access_token")
+    if version < 2:
+        # v2: the "code being given away" became a host-written Markdown "reward".
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
+        if "secret" in columns:
+            conn.execute("ALTER TABLE giveaways RENAME COLUMN secret TO reward")
+        if "secret_viewed_at" in columns:
+            conn.execute("ALTER TABLE giveaways RENAME COLUMN secret_viewed_at TO reward_viewed_at")
 
 
 def init_db(path: Path | None = None) -> None:

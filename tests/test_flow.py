@@ -1,9 +1,37 @@
+import sqlite3
 from datetime import timedelta
 
 import pytest
 
 from giveaway_quest import db, mastodon, services
 from tests.conftest import create_giveaway, csrf, login_as, make_user
+
+
+def test_schema_v1_to_v2_renames_secret_to_reward(tmp_path):
+    path = tmp_path / "old.sqlite3"
+    db.init_db(path)
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        "ALTER TABLE giveaways RENAME COLUMN reward TO secret;"
+        "ALTER TABLE giveaways RENAME COLUMN reward_viewed_at TO secret_viewed_at;"
+        "PRAGMA user_version = 1;"
+    )
+    conn.execute(
+        "INSERT INTO giveaways (slug, owner_id, title, secret, created_at, ends_at)"
+        " VALUES ('a-b-c', 1, 'T', 'KEY-123', '2026-01-01Z', '2026-02-01Z')"
+    )
+    conn.commit()
+    conn.close()
+
+    db.init_db(path)  # runs the v2 migration
+
+    conn = sqlite3.connect(path)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
+    assert "reward" in cols and "reward_viewed_at" in cols
+    assert "secret" not in cols and "secret_viewed_at" not in cols
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
+    assert conn.execute("SELECT reward FROM giveaways").fetchone()[0] == "KEY-123"
+    conn.close()
 
 
 def test_front_page_and_meta(client):
@@ -129,7 +157,7 @@ def test_create_announce_enter_draw_win(client, fake):
     page = client.get(f"/{slug}")
     assert "That's you" in page.text and "AAAA-BBBB-CCCC" in page.text
     with db.connect() as conn:
-        assert services.get_giveaway(conn, slug)["secret_viewed_at"]
+        assert services.get_giveaway(conn, slug)["reward_viewed_at"]
 
     # somebody else does not see the code
     login_as(client, make_user("loser@other.social"))
@@ -194,18 +222,18 @@ def test_logged_out_visitor_gets_a_share_link(client):
 def test_validation_errors(client):
     login_as(client, make_user())
     resp = client.post(
-        "/new", data={"title": "", "secret": "x", "hours": "1", "_csrf_token": csrf(client, "/new")}
+        "/new", data={"title": "", "reward": "x", "hours": "1", "_csrf_token": csrf(client, "/new")}
     )
     assert resp.status_code == 422 and "Title is required" in resp.text
     resp = client.post(
-        "/new", data={"title": "t", "secret": "x", "hours": "99999", "_csrf_token": csrf(client)}
+        "/new", data={"title": "t", "reward": "x", "hours": "99999", "_csrf_token": csrf(client)}
     )
     assert resp.status_code == 422 and "between 1 hour and 90 days" in resp.text
     resp = client.post(
         "/new",
         data={
             "title": "t",
-            "secret": "x",
+            "reward": "x",
             "hours": "1",
             "allowed_instances": "not a host",
             "_csrf_token": csrf(client),
@@ -272,5 +300,39 @@ def test_admin_hide_and_backup(client, tmp_path):
 
 def test_csrf_required(client):
     login_as(client, make_user())
-    resp = client.post("/new", data={"title": "t", "secret": "x", "hours": "1"})
+    resp = client.post("/new", data={"title": "t", "reward": "x", "hours": "1"})
     assert resp.status_code == 403
+
+
+def test_reward_is_rendered_markdown_for_the_winner(client, fake):
+    host = make_user("host@example.social")
+    login_as(client, host)
+    slug = create_giveaway(
+        client,
+        reward="**A shiny sword!**\n\nRedeem `AAAA-BBBB-CCCC` at https://example.com",
+    )
+
+    player = make_user("player@other.social")
+    login_as(client, player)
+    client.post(f"/{slug}/enter", data={"agree": "on", "_csrf_token": csrf(client)})
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE giveaways SET ends_at = ? WHERE slug = ?",
+            (db.iso(db.now() - timedelta(minutes=1)), slug),
+        )
+    assert services.draw_due() == [slug]
+
+    page = client.get(f"/{slug}").text
+    assert "<strong>A shiny sword!</strong>" in page
+    assert "<code>AAAA-BBBB-CCCC</code>" in page
+    assert "Here is your reward" in page
+
+
+def test_md_preview_endpoint(client):
+    login_as(client, make_user())
+    resp = client.post(
+        "/md-preview",
+        data={"text": "# Hi\n\n*there*", "_csrf_token": csrf(client, "/new")},
+    )
+    assert resp.status_code in (200, 201)
+    assert "<h1>Hi</h1>" in resp.text and "<em>there</em>" in resp.text

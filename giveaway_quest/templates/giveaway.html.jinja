@@ -74,7 +74,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                         }} Your Quest
                     </div>
                     <div class="quest-md">
-                        {{ g.quest | quest_markdown | safe }}
+                        {{ g.quest | markdown | safe }}
                     </div>
                 </div>
                 {% endif %} {% if g.conditions %}
@@ -139,12 +139,13 @@ g.owner_acct }}{% endblock %} {% block head %}
                 {% if is_winner %}
                 <div class="alert alert-success mt-2 flex-col items-start">
                     <div class="font-semibold">
-                        That's you! Here is your code:
+                        That's you! Here is your reward:
                     </div>
-                    <code
-                        class="text-lg font-mono select-all break-all bg-base-100 text-base-content px-3 py-2 rounded"
-                        >{{ g.secret }}</code
+                    <div
+                        class="quest-md select-all break-words bg-base-100 text-base-content px-3 py-2 rounded w-full"
                     >
+                        {{ g.reward | markdown | safe }}
+                    </div>
                 </div>
                 {% endif %} {% else %}
                 <p class="text-base-content/70">
@@ -185,20 +186,20 @@ g.owner_acct }}{% endblock %} {% block head %}
                 <h2 class="card-title text-base">You're hosting this</h2>
                 <details class="collapse collapse-arrow bg-base-200">
                     <summary class="collapse-title text-sm font-medium">
-                        Show the code
+                        Show the reward
                     </summary>
                     <div class="collapse-content">
-                        <code class="font-mono break-all select-all"
-                            >{{ g.secret }}</code
-                        >
+                        <div class="quest-md select-all break-words">
+                            {{ g.reward | markdown | safe }}
+                        </div>
                     </div>
                 </details>
                 {% if status == 'ended' and g.winner_id %}
                 <p class="text-sm">
                     {% if g.winner_notified_at %}The winner was DM'd from the {{
                     site_name }} account.{% else %}The winner wasn't DM'd
-                    &mdash; they'll see the code when they log in here.{% endif
-                    %} {% if g.secret_viewed_at %}They have viewed the code.{%
+                    &mdash; they'll see the reward when they log in here.{% endif
+                    %} {% if g.reward_viewed_at %}They have viewed the reward.{%
                     else %}Not viewed yet.{% endif %}
                 </p>
                 {% endif %}
@@ -244,7 +245,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                     <time datetime="{{ entry.created_at }}" data-local
                         >{{ entry.created_at | human }}</time
                     >. The winner is picked automatically at the deadline; if
-                    it's you, you'll get a DM and the code shows up on this
+                    it's you, you'll get a DM and the reward shows up on this
                     page.
                 </p>
                 <form method="post" action="/{{ g.slug }}/withdraw">
@@ -275,7 +276,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                         <span
                             >I've read the conditions{% if g.quest %} and I'll
                             do the quest{% endif %}. I can actually use this
-                            code.</span
+                            reward.</span
                         >
                     </label>
                     <button class="btn btn-primary w-full">Enter</button>

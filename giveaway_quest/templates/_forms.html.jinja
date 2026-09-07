@@ -1,0 +1,42 @@
+{# Reusable form widgets. #}
+
+{# A Markdown textarea with a Write/Preview toggle. Enhanced by app.js
+   ([data-md-editor]); degrades to a plain textarea when JS is off. The preview
+   tab POSTs the current text to /md-preview and drops the sanitised HTML in. #}
+{% macro md_editor(name, label, value='', rows=3, placeholder='',
+                   hint='Markdown: **bold**, *italic*, [links](https://…), # headings and lists.') %}
+<div data-md-editor>
+    <div class="flex items-center justify-between mb-1">
+        <span class="text-sm">{{ label }}</span>
+        <div class="join">
+            <button
+                type="button"
+                class="btn btn-xs join-item btn-active"
+                data-md-tab="write"
+            >
+                Write
+            </button>
+            <button
+                type="button"
+                class="btn btn-xs join-item"
+                data-md-tab="preview"
+            >
+                Preview
+            </button>
+        </div>
+    </div>
+    <textarea
+        name="{{ name }}"
+        data-md-input
+        class="textarea w-full"
+        rows="{{ rows }}"
+        maxlength="2000"
+        placeholder="{{ placeholder }}"
+    >
+{{ value }}</textarea>
+    <div data-md-preview class="textarea w-full min-h-24 hidden"></div>
+    {% if hint %}
+    <p class="label text-xs text-base-content/60">{{ hint }}</p>
+    {% endif %}
+</div>
+{% endmacro %}

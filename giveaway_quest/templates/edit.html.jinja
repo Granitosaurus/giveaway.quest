@@ -1,24 +1,17 @@
-{% extends "base.html.jinja" %} {% block title %}Edit · {{ g.title }} · {{
-site_name }}{% endblock %} {% block content %}
+{% extends "base.html.jinja" %}
+{% from "_forms.html.jinja" import md_editor %}
+{% block title %}Edit · {{ g.title }} · {{ site_name }}{% endblock %}
+{% block content %}
 <h1 class="text-3xl font-bold mb-1">Edit giveaway</h1>
 <p class="text-base-content/70 mb-6">
-    <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · the title and code
+    <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · the title and reward
     can't be changed; delete and recreate instead.
 </p>
 
 <form method="post" action="/{{ g.slug }}/edit" class="max-w-2xl space-y-4">
     {{ csrf_input | safe }}
     <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
-        <label class="floating-label">
-            <span>Quest</span>
-            <textarea
-                name="quest"
-                class="textarea w-full"
-                rows="2"
-                maxlength="2000"
-            >
-{{ g.quest or '' }}</textarea>
-        </label>
+        {{ md_editor("quest", "Quest", g.quest or "", rows=2) }}
         <label class="floating-label">
             <span>Conditions</span>
             <textarea
