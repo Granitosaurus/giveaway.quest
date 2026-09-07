@@ -1,0 +1,27 @@
+{
+    "name": "giveaway.quest",
+    "short_name": "giveaway.quest",
+    "description": "Give away spare game keys and other digital codes to real Fediverse people. Log in with Mastodon, add a little quest, let the site pick a winner.",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "theme_color": "#9a7b4f",
+    "background_color": "#ffffff",
+    "icons": [
+        {
+            "src": "/static/icons/favicon.svg",
+            "type": "image/svg+xml",
+            "sizes": "any"
+        },
+        {
+            "src": "/static/icons/favicon-192x192.png",
+            "type": "image/png",
+            "sizes": "192x192"
+        },
+        {
+            "src": "/static/icons/favicon-512x512.png",
+            "type": "image/png",
+            "sizes": "512x512"
+        }
+    ]
+}

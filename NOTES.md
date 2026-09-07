@@ -157,6 +157,13 @@ The Mastodon post itself is never modified or deleted by the site.
   `_card.html.jinja`, the giveaway-page status badges and the "Your Quest" panel.
 - Headings and the wordmark use `.font-quest` (a system serif stack, no
   webfont).
+- Favicons live in `static/icons/` (`favicon.svg` is the primary, plus
+  `.ico` and PNGs at 16/32/48/64/180/192/512). `base.html.jinja` `<head>`
+  wires them up: `rel="icon"` svg + ico + PNGs, `apple-touch-icon` (180),
+  Safari `mask-icon`, and `rel="manifest"` → `static/site.webmanifest`
+  (192/512 PNGs, gold `theme_color`). `theme-color` `<meta>` tags switch
+  white / slate by `prefers-color-scheme`. All same-origin, so the CSP
+  `default-src 'self'` covers the manifest fetch with no new directive.
 - JS lives in two static files, never inline, so the CSP can be
   `script-src 'self'`: `static/theme.js` (blocking, in `<head>`, reapplies
   the saved theme before first paint) and `static/app.js` (theme toggle,
