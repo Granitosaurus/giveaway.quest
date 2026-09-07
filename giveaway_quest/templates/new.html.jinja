@@ -1,8 +1,10 @@
-{% extends "base.html.jinja" %} {% block title %}New giveaway · {{ site_name
-}}{% endblock %} {% block content %}
+{% extends "base.html.jinja" %}
+{% from "_forms.html.jinja" import md_editor %}
+{% block title %}New giveaway · {{ site_name }}{% endblock %}
+{% block content %}
 <h1 class="text-3xl font-bold mb-2">New giveaway</h1>
 <p class="text-base-content/70 mb-6">
-    The code stays secret on {{ site_name }} and is shown only to the winner.
+    The reward stays secret on {{ site_name }} and is shown only to the winner.
     Everything else is public.
 </p>
 
@@ -22,66 +24,23 @@
                     value="{{ form.title or '' }}"
                 />
             </label>
-            <label class="floating-label">
-                <span>The code (kept secret)</span>
-                <input
-                    name="secret"
-                    class="input w-full font-mono"
-                    required
-                    maxlength="500"
-                    placeholder="AAAAA-BBBBB-CCCCC"
-                    value="{{ form.secret or '' }}"
-                    autocomplete="off"
-                />
-            </label>
-            <div data-quest-editor>
-                <div class="flex items-center justify-between mb-1">
-                    <span class="text-sm">Quest (optional, the fun part)</span>
-                    <div class="join">
-                        <button
-                            type="button"
-                            class="btn btn-xs join-item btn-active"
-                            data-quest-tab="write"
-                        >
-                            Write
-                        </button>
-                        <button
-                            type="button"
-                            class="btn btn-xs join-item"
-                            data-quest-tab="preview"
-                        >
-                            Preview
-                        </button>
-                    </div>
-                </div>
-                <textarea
-                    name="quest"
-                    data-quest-input
-                    class="textarea w-full"
-                    rows="3"
-                    maxlength="2000"
-                    placeholder="Pet a cat. Take a 20 minute walk. Draw a duck."
-                >
-{{ form.quest or '' }}</textarea>
-                <div
-                    data-quest-preview
-                    class="textarea w-full min-h-24 hidden"
-                ></div>
-                <p class="label text-xs text-base-content/60">
-                    Markdown: **bold**, *italic*, [links](https://…), and lists.
-                </p>
-            </div>
-            <label class="floating-label">
-                <span>Conditions participants must agree to (optional)</span>
-                <textarea
-                    name="conditions"
-                    class="textarea w-full"
-                    rows="3"
-                    maxlength="2000"
-                    placeholder="Region locked to EU. Please only enter if you'll actually play it."
-                >
-{{ form.conditions or '' }}</textarea>
-            </label>
+
+            {{ md_editor(
+                "quest",
+                "Quest (optional, the fun part)",
+                form.quest or "",
+                rows=3,
+                placeholder="Pet a cat. Take a 20 minute walk. Draw a duck."
+            ) }}
+
+            {{ md_editor(
+                "reward",
+                "The reward (kept secret — only the winner sees it)",
+                form.reward or "",
+                rows=3,
+                placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
+                hint="Paste a plain code, or use Markdown to wrap it in flavor text, links and instructions. Only the winner ever sees this."
+            ) }}
         </fieldset>
 
         <p class="text-sm text-base-content/60">
@@ -95,6 +54,17 @@
     <div class="space-y-4">
         <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
             <legend class="fieldset-legend">Rules</legend>
+            <label class="floating-label">
+                <span>Conditions participants must agree to (optional)</span>
+                <textarea
+                    name="conditions"
+                    class="textarea w-full"
+                    rows="3"
+                    maxlength="2000"
+                    placeholder="Region locked to EU. Please only enter if you'll actually play it."
+                >
+{{ form.conditions or '' }}</textarea>
+            </label>
             <label class="floating-label">
                 <span>Runs for (hours)</span>
                 <input

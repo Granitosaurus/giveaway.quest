@@ -1,10 +1,11 @@
 # giveaway.quest
 
 Give away spare game keys and other digital codes to *real* people on the
-Fediverse. Hosts log in with Mastodon, register a code, set a deadline and a
-little quest ("pet a cat"); participants log in with Mastodon, agree to the
-conditions and enter; at the deadline the site picks a winner at random, DMs
-them from the giveaway.quest account and shows them the code when they log in.
+Fediverse. Hosts log in with Mastodon, write up the reward (a code, or Markdown
+with some flavor text), set a deadline and a little quest ("pet a cat");
+participants log in with Mastodon, agree to the conditions and enter; at the
+deadline the site picks a winner at random, DMs them from the giveaway.quest
+account and shows them the reward when they log in.
 Logging in only ever reads your profile &mdash; the site never posts as you.
 
 Stack: Python 3.13 · [Litestar](https://litestar.dev) · SQLite · Jinja ·
@@ -48,7 +49,7 @@ user. The login token is used once to read the profile, then revoked and
 discarded — it is never stored. Announcements (`gq announce`) and winner DMs
 go out from the site's own account, configured via `GQ_ANNOUNCE_INSTANCE` /
 `GQ_ANNOUNCE_TOKEN` (an app token on that account with the `write:statuses`
-scope). The database still holds giveaway codes and per-instance OAuth client
+scope). The database still holds giveaway rewards and per-instance OAuth client
 secrets; treat it (and backups) as secret.
 
 ## Configuration
@@ -74,7 +75,7 @@ gq draw                                  # draw overdue giveaways (server does i
 gq announce <slug> [--text "..."]        # post an announcement from the site's Mastodon account
 gq backup [--keep 48]                    # snapshot the sqlite db into data/backups/
 gq admin list [--all] [--hidden] [-q x]  # H=hidden L=listed D=drawn
-gq admin show <slug>                     # everything incl. the secret and entrants
+gq admin show <slug>                     # everything incl. the reward and entrants
 gq admin hide <slug> / unhide <slug>     # soft moderation (host still sees it)
 gq admin delete <slug> --yes             # hard delete
 gq admin ban user@instance [--unban]     # blocks login, entering and winning

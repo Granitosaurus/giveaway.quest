@@ -47,9 +47,9 @@ which can be null after drawing if nobody entered.
 (`GQ_ANNOUNCE_*`) mentioning the winner. If that account isn't configured or
 the post fails, the DM is skipped, `winner_notified_at` stays null, and the
 host sees so on the page. The site is the source of truth: the winner sees
-the code when they log in, and `secret_viewed_at` is set on first load. A
+the reward when they log in, and `reward_viewed_at` is set on first load. A
 Mastodon "direct" post is not private (both instances' admins can read it),
-which is why the code itself never travels in the DM — only a link.
+which is why the reward itself never travels in the DM — only a link.
 
 **Posts from the site's own account never carry raw host text.**
 `services.neutralize_for_post` swaps `@`/`#` for their full-width look-alikes
@@ -70,9 +70,20 @@ everyone but host/admins, gone from index and sitemap) and `users.banned`
 draws). Both are only set from the `gq admin` CLI. `GQ_ADMINS` only grants
 *viewing* hidden pages in the web UI; there is no web admin on purpose.
 
-**Only text is accepted from users**: title, code, quest, conditions,
+**Only text is accepted from users**: title, reward, quest, conditions,
 allowed-instance list, post URL (must be `https://`). Everything is
 escaped by Jinja autoescape. Length limits are in `services.py`.
+
+**The reward is host-written Markdown**, not a bare code. Stored in
+`giveaways.reward` (still winner-only; schema v2 renamed the old `secret` /
+`secret_viewed_at` columns to `reward` / `reward_viewed_at`),
+rendered through `services.render_markdown` — the same restricted
+CommonMark subset as the quest text (`_MD_TAGS`: inline emphasis, links,
+lists, headings, code, blockquote; no images, no raw HTML; nh3 is the
+second layer). The create form asks for *title, quest, reward*, then puts
+*conditions* under the "Rules" fieldset alongside duration and eligibility.
+Quest and reward both use the `md_editor` macro in `templates/_forms.html.jinja`
+(a Write/Preview textarea; the Preview tab POSTs to `/md-preview`).
 
 **Announcement flow.** Logged-in users get *no* write access. Instead:
 
@@ -113,7 +124,7 @@ The Mastodon post itself is never modified or deleted by the site.
   then calls `/oauth/revoke` (best effort) and drops it. Schema v1
   (`PRAGMA user_version`, see `db._migrate`) removed the old
   `users.access_token` column. The db is still secret because of giveaway
-  codes and `mastodon_apps.client_secret`.
+  rewards (`giveaways.reward`) and `mastodon_apps.client_secret`.
 - Everything that comes back from `verify_credentials` is attacker-controlled
   (anyone can run an instance): `mastodon.account_from_json` only accepts
   `https://` profile/avatar URLs (a `javascript:` URL in `href` would have
@@ -168,7 +179,8 @@ The Mastodon post itself is never modified or deleted by the site.
   `script-src 'self'`: `static/theme.js` (blocking, in `<head>`, reapplies
   the saved theme before first paint) and `static/app.js` (theme toggle,
   localises `<time data-local>`, ticks `[data-countdown]`, copy button, live
-  filter, quest preview, and `form[data-confirm]` confirm dialogs — use that
+  filter, the Markdown write/preview toggle (`[data-md-editor]` → `/md-preview`),
+  and `form[data-confirm]` confirm dialogs — use that
   attribute instead of `onsubmit`, inline handlers are blocked by the CSP).
   Everything degrades to server-rendered UTC times and the default theme.
 - Security headers (CSP, HSTS when `GQ_BASE_URL` is https, nosniff, DENY

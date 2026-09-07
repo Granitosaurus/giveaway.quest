@@ -102,7 +102,7 @@ def csrf(client: TestClient, path: str = "/") -> str:
 def create_giveaway(client: TestClient, **overrides) -> str:
     form = {
         "title": "Psychonauts 2",
-        "secret": "AAAA-BBBB-CCCC",
+        "reward": "AAAA-BBBB-CCCC",
         "quest": "pet a cat",
         "conditions": "US only",
         "hours": "48",

@@ -97,9 +97,7 @@ def _configure_jinja(engine: JinjaTemplateEngine) -> None:
             return f"{hours}h {minutes}m left"
         return f"{minutes}m left"
 
-    env.filters.update(
-        dt=dt, human=human, remaining=remaining, quest_markdown=services.render_quest_markdown
-    )
+    env.filters.update(dt=dt, human=human, remaining=remaining, markdown=services.render_markdown)
     env.globals.update(status_of=services.status_of)
 
 

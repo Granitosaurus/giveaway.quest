@@ -1,5 +1,5 @@
 // Progressive enhancement only: theme toggle, localised timestamps, countdowns,
-// copy button, live filter, quest preview, confirm dialogs. The page works without it.
+// copy button, live filter, Markdown write/preview toggle, confirm dialogs. The page works without it.
 // Kept as an external file (no inline scripts/handlers) so the CSP can be `script-src 'self'`.
 (function () {
   // Theme toggle. Untouched, the page follows the OS (prefers-color-scheme);
@@ -75,29 +75,29 @@
     });
   });
 
-  document.querySelectorAll('[data-quest-editor]').forEach(function (root) {
-    var input = root.querySelector('[data-quest-input]');
-    var preview = root.querySelector('[data-quest-preview]');
-    var tabs = root.querySelectorAll('[data-quest-tab]');
+  document.querySelectorAll('[data-md-editor]').forEach(function (root) {
+    var input = root.querySelector('[data-md-input]');
+    var preview = root.querySelector('[data-md-preview]');
+    var tabs = root.querySelectorAll('[data-md-tab]');
     var csrfToken = function () {
       var m = document.cookie.match(/(?:^|; )csrftoken=([^;]*)/);
       return m ? decodeURIComponent(m[1]) : '';
     };
     tabs.forEach(function (tab) {
       tab.addEventListener('click', function () {
-        var name = tab.getAttribute('data-quest-tab');
+        var name = tab.getAttribute('data-md-tab');
         tabs.forEach(function (t) { t.classList.toggle('btn-active', t === tab); });
         input.classList.toggle('hidden', name === 'preview');
         preview.classList.toggle('hidden', name !== 'preview');
         if (name !== 'preview') return;
         preview.textContent = 'Loading…';
-        fetch('/quest-preview', {
+        fetch('/md-preview', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
             'x-csrftoken': csrfToken()
           },
-          body: 'quest=' + encodeURIComponent(input.value)
+          body: 'text=' + encodeURIComponent(input.value)
         }).then(function (r) {
           if (!r.ok) throw new Error('bad response');
           return r.text();

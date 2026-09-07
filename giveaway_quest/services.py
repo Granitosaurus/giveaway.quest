@@ -16,31 +16,50 @@ from .config import settings
 from .slugs import new_slug
 
 TITLE_MAX = 120
-SECRET_MAX = 500
 TEXT_MAX = 2000
+REWARD_MAX = TEXT_MAX  # the reward is Markdown now, so it gets the same room as quest/conditions
 POST_MAX = 450  # leave room below Mastodon's default 500 char limit
 PAGE_SIZE = 12
 MAX_DURATION_HOURS = 24 * 90
 
-# Quest instructions: a restricted CommonMark subset. No images or raw HTML -
-# markdown-it-py already refuses dangerous link schemes (javascript:, etc.) at
-# render time, and nh3 strips anything outside the tag/attribute allowlist as
-# a second layer.
-_QUEST_MD = markdown_it.MarkdownIt("commonmark", {"breaks": True}).disable(
+# Host-written prose (quest instructions, the reward blurb): a restricted CommonMark
+# subset. No images or raw HTML - markdown-it-py already refuses dangerous link
+# schemes (javascript:, etc.) at render time, and nh3 strips anything outside the
+# tag/attribute allowlist as a second layer.
+_MD = markdown_it.MarkdownIt("commonmark", {"breaks": True}).disable(
     ["image", "html_block", "html_inline"]
 )
-_QUEST_TAGS = {"p", "br", "strong", "em", "ul", "ol", "li", "a", "code", "blockquote"}
-_QUEST_ATTRS = {"a": {"href"}}
+_MD_TAGS = {
+    "p",
+    "br",
+    "hr",
+    "strong",
+    "em",
+    "ul",
+    "ol",
+    "li",
+    "a",
+    "code",
+    "pre",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+}
+_MD_ATTRS = {"a": {"href"}}
 
 
 class ValidationError(Exception):
     pass
 
 
-def render_quest_markdown(text: str | None) -> str:
+def render_markdown(text: str | None) -> str:
     if not text:
         return ""
-    return nh3.clean(_QUEST_MD.render(text), tags=_QUEST_TAGS, attributes=_QUEST_ATTRS)
+    return nh3.clean(_MD.render(text), tags=_MD_TAGS, attributes=_MD_ATTRS)
 
 
 # --------------------------------------------------------------------------- users
@@ -131,7 +150,7 @@ def parse_hours(raw: str | None, *, name: str = "Duration") -> int:
 @dataclass(slots=True)
 class GiveawayForm:
     title: str
-    secret: str
+    reward: str
     conditions: str
     quest: str
     allowed_instances: str
@@ -154,7 +173,7 @@ class GiveawayForm:
             raise ValidationError(f"Allowed servers: {exc}") from exc
         return cls(
             title=title,
-            secret=_clean_text(data.get("secret"), SECRET_MAX, required=True, name="The code"),
+            reward=_clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward"),
             conditions=_clean_text(data.get("conditions"), TEXT_MAX, name="Conditions"),
             quest=_clean_text(data.get("quest"), TEXT_MAX, name="Quest"),
             allowed_instances=allowed,
@@ -187,7 +206,7 @@ def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -
     now = db.now()
     slug = new_slug(conn)
     conn.execute(
-        """INSERT INTO giveaways (slug, owner_id, title, secret, conditions, quest,
+        """INSERT INTO giveaways (slug, owner_id, title, reward, conditions, quest,
                                   allowed_instances, min_account_age_days, listed,
                                   created_at, ends_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -195,7 +214,7 @@ def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -
             slug,
             owner["id"],
             form.title,
-            form.secret,
+            form.reward,
             form.conditions,
             form.quest,
             form.allowed_instances,
@@ -445,9 +464,9 @@ def draw_due() -> list[str]:
     return drawn
 
 
-def mark_secret_viewed(conn: sqlite3.Connection, giveaway: dict) -> None:
-    if not giveaway["secret_viewed_at"]:
+def mark_reward_viewed(conn: sqlite3.Connection, giveaway: dict) -> None:
+    if not giveaway["reward_viewed_at"]:
         conn.execute(
-            "UPDATE giveaways SET secret_viewed_at = ? WHERE id = ?",
+            "UPDATE giveaways SET reward_viewed_at = ? WHERE id = ?",
             (db.iso(db.now()), giveaway["id"]),
         )

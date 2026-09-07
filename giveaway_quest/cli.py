@@ -132,7 +132,7 @@ def list_(all: bool = False, hidden: bool = False, q: str = "", limit: int = 50)
 
 @admin.command
 def show(slug: str) -> None:
-    """Print everything about one giveaway, including the secret and entrants."""
+    """Print everything about one giveaway, including the reward and entrants."""
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
         if not g:
