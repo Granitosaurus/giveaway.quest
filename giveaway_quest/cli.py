@@ -18,7 +18,7 @@ app.command(admin)
 @app.command
 def serve(
     host: str = "127.0.0.1",
-    port: int = 8000,
+    port: int = 8012,
     reload: bool = False,
     debug: bool = False,
     workers: int = 1,
