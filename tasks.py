@@ -59,7 +59,7 @@ def redeploy(c):
     --force-recreate is required, or the old code keeps serving silently.
     """
     with c.cd(str(ROOT)):
-        # c.run("git pull")
+        c.run("git pull")
         c.run(f"{PODMAN_COMPOSE} build app")
         c.run(f"{PODMAN_COMPOSE} up -d --force-recreate app")
         c.run("podman image prune -f")
