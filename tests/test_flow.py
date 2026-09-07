@@ -178,7 +178,8 @@ def test_announce_failure_leaves_giveaway_unannounced(client, fake):
 
 
 def test_login_page_is_read_only(client):
-    assert "never posts, follows, or sends messages as you" in client.get("/auth/login").text
+    page = " ".join(client.get("/auth/login").text.split())
+    assert "never posts, follows, or sends messages as you" in page
 
 
 def test_logged_out_visitor_gets_a_share_link(client):

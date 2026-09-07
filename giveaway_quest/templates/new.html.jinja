@@ -136,13 +136,7 @@
                     type="checkbox"
                     name="listed"
                     class="checkbox"
-                    {%
-                    if
-                    form.listed=""
-                    ="on"
-                    %}checked{%
-                    endif
-                    %}
+                    {% if form.listed == 'on' %}checked{% endif %}
                 />
                 <span>Show on the {{ site_name }} front page</span>
             </label>
