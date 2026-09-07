@@ -10,7 +10,46 @@
         />
         <link rel="canonical" href="{{ base_url }}{{ path }}" />
         <link rel="stylesheet" href="/static/app.css?v={{ version }}" />
+        <link rel="icon" href="/static/icons/favicon.ico" sizes="32x32" />
         <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml" />
+        <link
+            rel="icon"
+            href="/static/icons/favicon-16x16.png"
+            type="image/png"
+            sizes="16x16"
+        />
+        <link
+            rel="icon"
+            href="/static/icons/favicon-32x32.png"
+            type="image/png"
+            sizes="32x32"
+        />
+        <link
+            rel="icon"
+            href="/static/icons/favicon-48x48.png"
+            type="image/png"
+            sizes="48x48"
+        />
+        <link
+            rel="apple-touch-icon"
+            href="/static/icons/favicon-180x180.png"
+        />
+        <link
+            rel="mask-icon"
+            href="/static/icons/favicon.svg"
+            color="#9a7b4f"
+        />
+        <link rel="manifest" href="/static/site.webmanifest" />
+        <meta
+            name="theme-color"
+            media="(prefers-color-scheme: light)"
+            content="#ffffff"
+        />
+        <meta
+            name="theme-color"
+            media="(prefers-color-scheme: dark)"
+            content="#1d232a"
+        />
         <!-- Blocking on purpose: applies a saved theme before first paint. External (not inline) so the CSP can stay script-src 'self'. -->
         <script src="/static/theme.js?v={{ version }}"></script>
         {% block head %}{% endblock %}
