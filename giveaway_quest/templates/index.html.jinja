@@ -1,52 +1,52 @@
 {% extends "base.html.jinja" %} {% block content %}
 <section class="mb-6">
-    <h1 class="text-3xl font-bold font-quest">Quest Board</h1>
+    <div class="flex gap-4 justify-between">
+        <h1 class="text-3xl font-bold font-quest">Quest Board</h1>
+        <form
+            method="get"
+            action="/"
+            class="flex flex-wrap gap-2 items-end mb-6"
+            data-live-filter
+        >
+            <select name="status" class="select select-sm w-auto">
+                <option value="open" {% if status=="open" %}selected{% endif %}>
+                    Open
+                </option>
+                <option value="ended" {% if status=="ended" %}selected{% endif %}>
+                    Ended
+                </option>
+                <option value="all" {% if status=="all" %}selected{% endif %}>
+                    All
+                </option>
+            </select>
+            <select name="sort" class="select select-sm w-auto">
+                <option value="ending" {% if sort=="ending" %}selected{% endif %}>
+                    Ending soon
+                </option>
+                <option value="newest" {% if sort=="newest" %}selected{% endif %}>
+                    Newest
+                </option>
+                <option value="popular" {% if sort=="popular" %}selected{% endif %}>
+                    Most entries
+                </option>
+            </select>
+            <label class="input input-sm w-full sm:w-64">
+                <span class="opacity-60" data-filter-spinner>🔍</span>
+                <input
+                    type="search"
+                    name="q"
+                    value="{{ q }}"
+                    placeholder="Search title, quest, host…"
+                />
+            </label>
+        </form>
+    </div>
     <p class="text-base-content/70 mt-1">
-        Spare game keys and other codes, given away to real people on the
-        Fediverse. Log in with Mastodon, do the little quest, cross your
-        fingers.
+        Share game keys and other codes with real people on the
+        Fediverse. Log in with Mastodon, do a little quest, cross your
+        fingers 🤞
     </p>
 </section>
-
-<form
-    method="get"
-    action="/"
-    class="flex flex-wrap gap-2 items-end mb-6"
-    data-live-filter
->
-    <label class="input input-sm w-full sm:w-64">
-        <span class="opacity-60" data-filter-spinner>🔍</span>
-        <input
-            type="search"
-            name="q"
-            value="{{ q }}"
-            placeholder="Search title, quest, host…"
-        />
-    </label>
-    <select name="status" class="select select-sm w-auto">
-        <option value="open" {% if status=="open" %}selected{% endif %}>
-            Open
-        </option>
-        <option value="ended" {% if status=="ended" %}selected{% endif %}>
-            Ended
-        </option>
-        <option value="all" {% if status=="all" %}selected{% endif %}>
-            All
-        </option>
-    </select>
-    <select name="sort" class="select select-sm w-auto">
-        <option value="ending" {% if sort=="ending" %}selected{% endif %}>
-            Ending soon
-        </option>
-        <option value="newest" {% if sort=="newest" %}selected{% endif %}>
-            Newest
-        </option>
-        <option value="popular" {% if sort=="popular" %}selected{% endif %}>
-            Most entries
-        </option>
-    </select>
-    <button class="btn btn-sm" data-filter-submit>Apply</button>
-</form>
 
 {% if giveaways %}
 <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
