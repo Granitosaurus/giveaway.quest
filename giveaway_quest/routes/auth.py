@@ -32,7 +32,7 @@ def login_form(
         return Redirect(_safe_next(next))
     return render(
         request,
-        "login.html",
+        "login.html.jinja",
         user=user,
         next=_safe_next(next),
         last_instance=request.session.get("last_instance", ""),

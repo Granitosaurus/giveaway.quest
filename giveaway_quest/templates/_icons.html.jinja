@@ -1,0 +1,34 @@
+{# Quest markers, World-of-Warcraft style: available -> gold "!" (open giveaway,
+go pick it up) progress -> silver "?" (deadline passed, a winner is being drawn)
+complete -> gold "?" (drawn, ready to turn in) Accepts the derived status
+("open" / "drawing" / "ended") or the marker name directly. `class` sizes it; it
+is decorative (aria-hidden) - callers keep a text label next to it. #} {% macro
+quest_marker(status, class="inline-block w-5 h-5 shrink-0 drop-shadow-sm
+align-[-0.15em]") -%} {%- set k = {"open": "available", "drawing": "progress",
+"ended": "complete"}.get(status, status) -%} {%- set fill = "#dfe4ec" if k ==
+"progress" else "#f6c944" -%} {%- set stroke = "#39414f" if k == "progress" else
+"#5b3d00" -%} {%- set glyph = "!" if k == "available" else "?" -%}
+<svg
+    viewBox="0 0 24 24"
+    class="{{ class }}"
+    role="img"
+    aria-hidden="true"
+    xmlns="http://www.w3.org/2000/svg"
+>
+    <text
+        x="12"
+        y="19.5"
+        text-anchor="middle"
+        font-size="25"
+        font-weight="900"
+        font-family="'Palatino Linotype','Book Antiqua',Palatino,Georgia,'Times New Roman',serif"
+        paint-order="stroke"
+        stroke="{{ stroke }}"
+        stroke-width="3"
+        stroke-linejoin="round"
+        fill="{{ fill }}"
+    >
+        {{ glyph }}
+    </text>
+</svg>
+{%- endmacro %}

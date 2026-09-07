@@ -17,10 +17,22 @@ app.command(admin)
 
 @app.command
 def serve(
-    host: str = "127.0.0.1", port: int = 8000, reload: bool = False, workers: int = 1
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    reload: bool = False,
+    debug: bool = False,
+    workers: int = 1,
 ) -> None:
     """Run the web server (uvicorn)."""
+    import os
+
     import uvicorn
+
+    if debug:
+        # Reload/multi-worker modes re-import config.py in a fresh subprocess,
+        # so flip the env var too, not just the already-loaded settings object.
+        os.environ["GQ_DEBUG"] = "1"
+        settings.debug = True
 
     db.init_db()
     uvicorn.run(

@@ -1,0 +1,9 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.4
+    hooks:
+      - id: ruff-format
+        files: ^giveaway_quest/
+      - id: ruff-check
+        files: ^giveaway_quest/
+        args: [--fix]

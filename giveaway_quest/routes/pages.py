@@ -55,7 +55,7 @@ def index(
     pages = max((total + services.PAGE_SIZE - 1) // services.PAGE_SIZE, 1)
     return render(
         request,
-        "index.html",
+        "index.html.jinja",
         user=user,
         giveaways=giveaways,
         total=total,
@@ -70,7 +70,7 @@ def index(
 
 @get("/new", guards=[require_login], sync_to_thread=True)
 def new_form(request: Request, user: NamedDependency[dict]) -> Template:
-    return render(request, "new.html", user=user, form={"hours": 72, "listed": "on"})
+    return render(request, "new.html.jinja", user=user, form={"hours": 72, "listed": "on"})
 
 
 @post("/new", guards=[require_login], sync_to_thread=True, middleware=write_rate_limit)
@@ -79,7 +79,7 @@ def create(request: Request, user: NamedDependency[dict], data: Form) -> Templat
         form = services.GiveawayForm.from_form(data)
     except services.ValidationError as exc:
         flash(request, str(exc), "error")
-        return render(request, "new.html", status_code=422, user=user, form=data)
+        return render(request, "new.html.jinja", status_code=422, user=user, form=data)
     with db.connect() as conn:
         giveaway = services.create_giveaway(conn, user, form)
     flash(request, "Giveaway created. Share the link so people can enter!", "success")
@@ -89,7 +89,9 @@ def create(request: Request, user: NamedDependency[dict], data: Form) -> Templat
 @post("/quest-preview", guards=[require_login], sync_to_thread=True)
 def quest_preview(data: Form) -> Template:
     text = (data.get("quest") or "")[: services.TEXT_MAX]
-    return Template("_quest_preview.html", context={"html": services.render_quest_markdown(text)})
+    return Template(
+        "_quest_preview.html.jinja", context={"html": services.render_quest_markdown(text)}
+    )
 
 
 @get("/mine", guards=[require_login], sync_to_thread=True)
@@ -104,7 +106,7 @@ def mine(request: Request, user: NamedDependency[dict]) -> Template:
             " ORDER BY g.ends_at DESC",
             (user["id"],),
         ).fetchall()
-    return render(request, "mine.html", user=user, hosting=hosting, entered=entered)
+    return render(request, "mine.html.jinja", user=user, hosting=hosting, entered=entered)
 
 
 @get("/{slug:str}", sync_to_thread=True)
@@ -129,7 +131,7 @@ def giveaway_page(
     toot_text = f"{suggested}\n\n{share_url}"
     return render(
         request,
-        "giveaway.html",
+        "giveaway.html.jinja",
         user=user,
         g=giveaway,
         status=status,
@@ -172,7 +174,9 @@ def withdraw(request: Request, slug: FromPath[str], user: NamedDependency[dict])
 @get("/{slug:str}/edit", guards=[require_login], sync_to_thread=True)
 def edit_form(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Template:
     giveaway = _load(slug, user, for_owner=True)
-    return render(request, "edit.html", user=user, g=giveaway, status=services.status_of(giveaway))
+    return render(
+        request, "edit.html.jinja", user=user, g=giveaway, status=services.status_of(giveaway)
+    )
 
 
 @post("/{slug:str}/edit", guards=[require_login], sync_to_thread=True)
@@ -190,7 +194,7 @@ def edit(
         flash(request, str(exc), "error")
         return render(
             request,
-            "edit.html",
+            "edit.html.jinja",
             status_code=422,
             user=user,
             g={**giveaway, **data},
