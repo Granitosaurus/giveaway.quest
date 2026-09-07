@@ -151,10 +151,10 @@ The Mastodon post itself is never modified or deleted by the site.
   under `theme`. A tiny blocking script in `<head>` reapplies it before
   first paint. `mq.change` keeps the toggle in sync with the OS while no
   choice is stored.
-- Quest markers: `templates/_icons.html` `quest_marker(status, class)` macro,
+- Quest markers: `templates/_icons.html.jinja` `quest_marker(status, class)` macro,
   a WoW-style glyph — gold `!` for `open`, silver `?` for `drawing`, gold `?`
   for `ended`. Inline `<svg>` with a `<text>` glyph (no icon font). Used in
-  `_card.html`, the giveaway-page status badges and the "Your Quest" panel.
+  `_card.html.jinja`, the giveaway-page status badges and the "Your Quest" panel.
 - Headings and the wordmark use `.font-quest` (a system serif stack, no
   webfont).
 - JS lives in two static files, never inline, so the CSP can be
@@ -200,7 +200,7 @@ The Mastodon post itself is never modified or deleted by the site.
   is `sha256(GQ_SECRET_KEY)`.
 - `NotAuthorizedException` from the `require_login` guard is turned into a
   redirect to `/auth/login?next=…` in the app-wide exception handler; all
-  other `HTTPException`s render `error.html`.
+  other `HTTPException`s render `error.html.jinja`.
 - `openapi_config=None` disables the `/schema` routes.
 - Route precedence: literal paths (`/new`, `/mine`, `/robots.txt`) win over
   `/{slug:str}`, verified by tests.

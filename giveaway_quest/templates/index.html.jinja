@@ -1,0 +1,90 @@
+{% extends "base.html.jinja" %} {% block content %}
+<section class="mb-6">
+    <h1 class="text-3xl font-bold font-quest">Quest Board</h1>
+    <p class="text-base-content/70 mt-1">
+        Spare game keys and other codes, given away to real people on the
+        Fediverse. Log in with Mastodon, do the little quest, cross your
+        fingers.
+    </p>
+</section>
+
+<form
+    method="get"
+    action="/"
+    class="flex flex-wrap gap-2 items-end mb-6"
+    data-live-filter
+>
+    <label class="input input-sm w-full sm:w-64">
+        <span class="opacity-60" data-filter-spinner>🔍</span>
+        <input
+            type="search"
+            name="q"
+            value="{{ q }}"
+            placeholder="Search title, quest, host…"
+        />
+    </label>
+    <select name="status" class="select select-sm w-auto">
+        <option value="open" {% if status=="open" %}selected{% endif %}>
+            Open
+        </option>
+        <option value="ended" {% if status=="ended" %}selected{% endif %}>
+            Ended
+        </option>
+        <option value="all" {% if status=="all" %}selected{% endif %}>
+            All
+        </option>
+    </select>
+    <select name="sort" class="select select-sm w-auto">
+        <option value="ending" {% if sort=="ending" %}selected{% endif %}>
+            Ending soon
+        </option>
+        <option value="newest" {% if sort=="newest" %}selected{% endif %}>
+            Newest
+        </option>
+        <option value="popular" {% if sort=="popular" %}selected{% endif %}>
+            Most entries
+        </option>
+    </select>
+    <button class="btn btn-sm" data-filter-submit>Apply</button>
+</form>
+
+{% if giveaways %}
+<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    {% for g in giveaways %}{% include "_card.html.jinja" %}{% endfor %}
+</div>
+{% if pages > 1 %} {% set qs = '&status=' ~ status ~ '&sort=' ~ sort ~ '&q=' ~
+(q | urlencode) %}
+<nav class="join mt-8 flex justify-center" aria-label="Pagination">
+    <a
+        class="join-item btn btn-sm {% if page <= 1 %}btn-disabled{% endif %}"
+        href="/?page={{ page - 1 }}{{ qs }}"
+        aria-label="Previous page"
+        >«</a
+    >
+    {% for n in page_numbers %} {% if n is none %}
+    <span class="join-item btn btn-sm btn-disabled">…</span>
+    {% elif n == page %}
+    <span class="join-item btn btn-sm btn-active" aria-current="page"
+        >{{ n }}</span
+    >
+    {% else %}
+    <a class="join-item btn btn-sm" href="/?page={{ n }}{{ qs }}">{{ n }}</a>
+    {% endif %} {% endfor %}
+    <a
+        class="join-item btn btn-sm {% if page >= pages %}btn-disabled{% endif %}"
+        href="/?page={{ page + 1 }}{{ qs }}"
+        aria-label="Next page"
+        >»</a
+    >
+</nav>
+{% endif %} {% else %}
+<div class="card bg-base-100 shadow-sm">
+    <div class="card-body items-center text-center">
+        <p class="text-lg">Nothing here yet.</p>
+        <p class="text-base-content/70">
+            Got a spare key?
+            <a class="link link-primary" href="/new">Start a giveaway</a>.
+        </p>
+    </div>
+</div>
+{% endif %} {% endblock %}

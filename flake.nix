@@ -5,23 +5,34 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
       daisyuiVersion = "5.7.28";
-      daisyui = pkgs: pkgs.fetchurl {
-        url = "https://github.com/saadeghi/daisyui/releases/download/v${daisyuiVersion}/daisyui.mjs";
-        hash = "sha256-9QhShLtWIqm6/NqRCKFJsGO8pzyrXu3l8PF6UAbgKEc=";
-      };
-      daisyuiTheme = pkgs: pkgs.fetchurl {
-        url = "https://github.com/saadeghi/daisyui/releases/download/v${daisyuiVersion}/daisyui-theme.mjs";
-        hash = "sha256-yRX66cxTwagM6CUc0e3qY1xbPGQMCv3FJpNA7APGh/M=";
-      };
+      daisyui =
+        pkgs:
+        pkgs.fetchurl {
+          url = "https://github.com/saadeghi/daisyui/releases/download/v${daisyuiVersion}/daisyui.mjs";
+          hash = "sha256-9QhShLtWIqm6/NqRCKFJsGO8pzyrXu3l8PF6UAbgKEc=";
+        };
+      daisyuiTheme =
+        pkgs:
+        pkgs.fetchurl {
+          url = "https://github.com/saadeghi/daisyui/releases/download/v${daisyuiVersion}/daisyui-theme.mjs";
+          hash = "sha256-yRX66cxTwagM6CUc0e3qY1xbPGQMCv3FJpNA7APGh/M=";
+        };
     in
     {
-      devShells = forAll (pkgs:
+      devShells = forAll (
+        pkgs:
         let
           python = pkgs.python313;
 
@@ -38,7 +49,7 @@
           dev = pkgs.writeShellScriptBin "dev" ''
             set -euo pipefail
             build-css --minify
-            exec uv run gq serve --reload "$@"
+            exec uv run gq serve --reload --debug "$@"
           '';
         in
         {
@@ -50,6 +61,7 @@
               pkgs.sqlite
               pkgs.ruff
               build-css
+              pkgs.ty
               dev
             ];
 
@@ -69,6 +81,7 @@
               echo "  uv run gq --help    admin CLI"
             '';
           };
-        });
+        }
+      );
     };
 }

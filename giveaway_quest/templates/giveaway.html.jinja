@@ -1,0 +1,311 @@
+{% extends "base.html.jinja" %} {% from "_icons.html.jinja" import quest_marker
+%} {% block title %}{{ g.title }} · {{ site_name }}{% endblock %} {% block
+description %}{{ g.quest or 'A giveaway on giveaway.quest' }} · hosted by @{{
+g.owner_acct }}{% endblock %} {% block head %}
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="{{ site_name }}" />
+<meta property="og:url" content="{{ share_url }}" />
+<meta property="og:title" content="🎁 {{ g.title }}" />
+<meta
+    property="og:description"
+    content="{% if status == 'open' %}Ends {{ g.ends_at | human }}. {% else %}Ended. {% endif %}{% if g.quest %}Quest: {{ g.quest | truncate(160) }} {% endif %}Hosted by @{{ g.owner_acct }}. {{ g.entry_count }} entries."
+/>
+<meta name="twitter:card" content="summary" />
+<meta name="fediverse:creator" content="@{{ g.owner_acct }}" />
+{% endblock %} {% block content %}
+<article class="grid gap-6 lg:grid-cols-3">
+    <div class="lg:col-span-2 space-y-6">
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body gap-4">
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if status == 'open' %}<span
+                        class="badge badge-success gap-1"
+                        >{{ quest_marker('open', 'w-3.5 h-3.5 drop-shadow-sm')
+                        }} available</span
+                    >
+                    {% elif status == 'drawing' %}<span
+                        class="badge badge-warning gap-1"
+                        >{{ quest_marker('drawing', 'w-3.5 h-3.5
+                        drop-shadow-sm') }} picking a winner…</span
+                    >
+                    {% else %}<span class="badge badge-ghost gap-1"
+                        >{{ quest_marker('ended', 'w-3.5 h-3.5 drop-shadow-sm')
+                        }} complete</span
+                    >{% endif %} {% if not g.listed %}<span
+                        class="badge badge-outline"
+                        title="Not shown on the front page"
+                        >unlisted</span
+                    >{% endif %} {% if g.hidden %}<span
+                        class="badge badge-error"
+                        >hidden by admin</span
+                    >{% endif %}
+                </div>
+                <h1 class="text-3xl font-bold leading-tight font-quest">
+                    {{ g.title }}
+                </h1>
+                <div class="flex items-center gap-2 text-sm">
+                    {% if g.owner_avatar %}<img
+                        src="{{ g.owner_avatar }}"
+                        alt=""
+                        class="w-7 h-7 rounded-full"
+                    />{% endif %}
+                    <span
+                        >hosted by
+                        <a
+                            class="link"
+                            href="{{ g.owner_profile_url }}"
+                            rel="noopener"
+                            >{{ g.owner_name }}</a
+                        >
+                        <span class="text-base-content/60"
+                            >@{{ g.owner_acct }}</span
+                        ></span
+                    >
+                </div>
+
+                {% if g.quest %}
+                <div
+                    class="rounded-box bg-primary/10 border border-primary/20 p-4"
+                >
+                    <div
+                        class="flex items-center gap-1.5 text-xs uppercase tracking-wide text-primary font-semibold mb-1"
+                    >
+                        {{ quest_marker('available', 'w-4 h-4 drop-shadow-sm')
+                        }} Your Quest
+                    </div>
+                    <div class="quest-md">
+                        {{ g.quest | quest_markdown | safe }}
+                    </div>
+                </div>
+                {% endif %} {% if g.conditions %}
+                <div>
+                    <h2 class="font-semibold mb-1">Conditions</h2>
+                    <p class="whitespace-pre-line text-sm">
+                        {{ g.conditions }}
+                    </p>
+                </div>
+                {% endif %}
+
+                <dl class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    <dt class="text-base-content/60">Who can enter</dt>
+                    <dd>
+                        {% if g.allowed_instances %}accounts on {{
+                        g.allowed_instances.replace(',', ', ') }}{% else
+                        %}anyone with a Mastodon account{% endif %}{% if
+                        g.min_account_age_days %}, at least {{
+                        g.min_account_age_days }} days old{% endif %}
+                    </dd>
+                    <dt class="text-base-content/60">Entries</dt>
+                    <dd>{{ g.entry_count }}</dd>
+                    <dt class="text-base-content/60">
+                        {{ 'Ends' if status == 'open' else 'Ended' }}
+                    </dt>
+                    <dd>
+                        <time datetime="{{ g.ends_at }}" data-local
+                            >{{ g.ends_at | human }}</time
+                        >
+                    </dd>
+                    {% if g.post_url %}
+                    <dt class="text-base-content/60">Announcement</dt>
+                    <dd>
+                        <a class="link" href="{{ g.post_url }}" rel="noopener"
+                            >Mastodon post</a
+                        >
+                    </dd>
+                    {% endif %}
+                </dl>
+            </div>
+        </div>
+
+        {% if status == 'ended' %}
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body">
+                <h2 class="card-title">🏆 Winner</h2>
+                {% if g.winner_id %}
+                <p>
+                    <a
+                        class="link"
+                        href="{{ g.winner_profile_url }}"
+                        rel="noopener"
+                        >{{ g.winner_name }}</a
+                    >
+                    <span class="text-base-content/60"
+                        >@{{ g.winner_acct }}</span
+                    >, drawn
+                    <time datetime="{{ g.drawn_at }}" data-local
+                        >{{ g.drawn_at | human }}</time
+                    >.
+                </p>
+                {% if is_winner %}
+                <div class="alert alert-success mt-2 flex-col items-start">
+                    <div class="font-semibold">
+                        That's you! Here is your code:
+                    </div>
+                    <code
+                        class="text-lg font-mono select-all break-all bg-base-100 text-base-content px-3 py-2 rounded"
+                        >{{ g.secret }}</code
+                    >
+                </div>
+                {% endif %} {% else %}
+                <p class="text-base-content/70">
+                    Nobody entered, so there is no winner.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <aside class="space-y-4">
+        {% if status == 'open' %}
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body items-center text-center">
+                <div
+                    class="text-xs uppercase tracking-wide text-base-content/60"
+                >
+                    Time left
+                </div>
+                <div
+                    class="text-3xl font-mono font-bold tabular-nums"
+                    data-countdown="{{ g.ends_at }}"
+                >
+                    {{ g.ends_at | remaining }}
+                </div>
+                <div class="text-xs text-base-content/60">
+                    ends
+                    <time datetime="{{ g.ends_at }}" data-local
+                        >{{ g.ends_at | human }}</time
+                    >
+                </div>
+            </div>
+        </div>
+        {% endif %} {% if is_owner or is_admin %}
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body gap-3">
+                <h2 class="card-title text-base">You're hosting this</h2>
+                <details class="collapse collapse-arrow bg-base-200">
+                    <summary class="collapse-title text-sm font-medium">
+                        Show the code
+                    </summary>
+                    <div class="collapse-content">
+                        <code class="font-mono break-all select-all"
+                            >{{ g.secret }}</code
+                        >
+                    </div>
+                </details>
+                {% if status == 'ended' and g.winner_id %}
+                <p class="text-sm">
+                    {% if g.winner_notified_at %}The winner was DM'd from the {{
+                    site_name }} account.{% else %}The winner wasn't DM'd
+                    &mdash; they'll see the code when they log in here.{% endif
+                    %} {% if g.secret_viewed_at %}They have viewed the code.{%
+                    else %}Not viewed yet.{% endif %}
+                </p>
+                {% endif %}
+                <p class="text-sm text-base-content/60">
+                    {% if not g.post_url %}Not announced by {{ site_name }} yet.
+                    {% endif %}Use <strong>Share</strong> below to post this
+                    from your own account.
+                </p>
+                {% if not g.drawn_at %}<a
+                    href="/{{ g.slug }}/edit"
+                    class="btn btn-sm btn-outline"
+                    >Edit</a
+                >{% endif %}
+                <form
+                    method="post"
+                    action="/{{ g.slug }}/delete"
+                    data-confirm="Delete this giveaway? This cannot be undone."
+                >
+                    {{ csrf_input | safe }}
+                    <button class="btn btn-sm btn-error btn-outline w-full">
+                        Delete
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% elif status == 'open' %}
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body gap-3">
+                {% if not user %}
+                <h2 class="card-title text-base">Want in?</h2>
+                <p class="text-sm text-base-content/70">
+                    Log in with your Mastodon account to enter. We only read
+                    your profile; your account is your proof of being a real
+                    person.
+                </p>
+                <a href="/auth/login?next=/{{ g.slug }}" class="btn btn-primary"
+                    >Log in with Mastodon</a
+                >
+                {% elif entry %}
+                <h2 class="card-title text-base">✅ You're in</h2>
+                <p class="text-sm text-base-content/70">
+                    Entered
+                    <time datetime="{{ entry.created_at }}" data-local
+                        >{{ entry.created_at | human }}</time
+                    >. The winner is picked automatically at the deadline; if
+                    it's you, you'll get a DM and the code shows up on this
+                    page.
+                </p>
+                <form method="post" action="/{{ g.slug }}/withdraw">
+                    {{ csrf_input | safe }}<button class="btn btn-sm btn-ghost">
+                        Withdraw entry
+                    </button>
+                </form>
+                {% elif problem %}
+                <h2 class="card-title text-base">Can't enter</h2>
+                <p class="text-sm">{{ problem }}</p>
+                {% else %}
+                <h2 class="card-title text-base">Enter the giveaway</h2>
+                <form
+                    method="post"
+                    action="/{{ g.slug }}/enter"
+                    class="space-y-3"
+                >
+                    {{ csrf_input | safe }}
+                    <label
+                        class="label cursor-pointer items-start gap-3 text-sm whitespace-normal"
+                    >
+                        <input
+                            type="checkbox"
+                            name="agree"
+                            class="checkbox checkbox-sm mt-0.5"
+                            required
+                        />
+                        <span
+                            >I've read the conditions{% if g.quest %} and I'll
+                            do the quest{% endif %}. I can actually use this
+                            code.</span
+                        >
+                    </label>
+                    <button class="btn btn-primary w-full">Enter</button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card bg-base-100 shadow-sm">
+            <div class="card-body gap-3 text-sm">
+                <h2 class="font-semibold">Share</h2>
+                <!-- TODO: skip the "which server" prompt for logged-in users if Mastodon's
+             share flow ever supports it safely — see mastodon/mastodon#33681. -->
+                <a
+                    class="btn btn-sm btn-primary w-full"
+                    href="{{ share_mastodon_url }}"
+                    target="_blank"
+                    rel="noopener"
+                    >Share on Mastodon</a
+                >
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline w-full"
+                    data-copy-url="{{ share_url }}"
+                >
+                    Copy URL
+                </button>
+            </div>
+        </div>
+    </aside>
+</article>
+{% endblock %}

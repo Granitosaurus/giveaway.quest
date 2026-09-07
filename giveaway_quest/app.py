@@ -62,7 +62,7 @@ def http_exception_handler(request: Request, exc: HTTPException) -> Response:
         user = None
     return render(
         request,
-        "error.html",
+        "error.html.jinja",
         status_code=exc.status_code,
         user=user,
         code=exc.status_code,
