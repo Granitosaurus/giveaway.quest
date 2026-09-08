@@ -10,7 +10,13 @@ g.owner_acct }}{% endblock %} {% block head %}
     property="og:description"
     content="{% if status == 'open' %}Ends {{ g.ends_at | human }}. {% else %}Ended. {% endif %}{% if g.quest %}Quest: {{ g.quest | truncate(160) }} {% endif %}Hosted by @{{ g.owner_acct }}. {{ g.entry_count }} entries."
 />
+<meta property="og:image" content="{{ base_url }}/static/icons/favicon-512x512.png" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:width" content="512" />
+<meta property="og:image:height" content="512" />
+<meta property="og:image:alt" content="{{ site_name }}" />
 <meta name="twitter:card" content="summary" />
+<meta name="twitter:image" content="{{ base_url }}/static/icons/favicon-512x512.png" />
 <meta name="fediverse:creator" content="@{{ g.owner_acct }}" />
 {% endblock %} {% block content %}
 <article class="grid gap-6 lg:grid-cols-3">
