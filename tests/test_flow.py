@@ -202,7 +202,13 @@ def test_announce_failure_leaves_giveaway_unannounced(client, fake):
             services.announce_on_mastodon(conn, g, "hi")
     with db.connect() as conn:
         assert services.get_giveaway(conn, slug)["post_url"] is None
-    assert "Not announced by giveaway.quest yet" in client.get(f"/{slug}").text
+
+    # the background pass also records the failure without binding a post
+    assert services.announce_due() == []
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+    assert g["post_url"] is None and g["post_id"] is None and g["announce_attempted_at"]
+    assert "hasn't gone through yet" in client.get(f"/{slug}").text
 
 
 def test_login_page_is_read_only(client):

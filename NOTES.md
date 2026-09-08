@@ -95,11 +95,26 @@ Quest and reward both use the `md_editor` macro in `templates/_forms.html.jinja`
   URLs, but that per-instance intent is deprecated and breaks when the text
   contains a URL (mastodon#33681) — it blanked the page and did nothing.
   share.joinmastodon.org asks for the user's server once and remembers it.
-- **Official announcement.** `gq announce <slug>` posts from the site's own
+- **Official announcement.** `announce_on_mastodon` posts from the site's own
   account (`GQ_ANNOUNCE_*`), appending `\n\n<giveaway url>` and storing the
-  returned `url`/`id` as `post_url`/`post_id`. Deliberately CLI-only (not
-  automatic on create) so the official account stays human-in-the-loop, same
-  as moderation. Hosts can also just paste any post URL on the edit page.
+  returned `url`/`id` as `post_url`/`post_id`. Triggered three ways:
+  - **Auto** (`GQ_AUTO_ANNOUNCE=1`, the default): `services.announce_due()` runs
+    from the background loop and posts every *listed*, un-hidden, still-open
+    giveaway that has no post bound yet. A failed attempt stamps
+    `giveaways.announce_attempted_at` and is retried no more than once per
+    `ANNOUNCE_RETRY` (30 min) so a broken token doesn't spin; the default text
+    is the same neutralised `title — quest` as the CLI. `services.announce_state`
+    (`announced`/`pending`/`retrying`/`unlisted`/`manual`) drives the note in
+    the host panel. Set `GQ_AUTO_ANNOUNCE=0` to opt out.
+  - **CLI:** `gq announce <slug> [--text "…"]` — always works, ignores the retry
+    spacing, `--text` is trusted as-is.
+  - **Paste:** a URL in the edit form's "Post URL" field (any `https://`); if
+    it's a status on `GQ_ANNOUNCE_INSTANCE`, `post_id` is derived from it too so
+    comments work.
+
+  Auto-announce reverses the original "CLI-only, human-in-the-loop" choice —
+  the account owner asked for an announcement on every public giveaway anyway.
+  Unlisted giveaways are still never auto-announced.
 
 The Mastodon post itself is never modified or deleted by the site.
 
@@ -108,10 +123,11 @@ its announcement post — the same "reply from your own account" model every
 "comments powered by Mastodon" setup uses, so logged-in users still get no
 write access here. `services.get_comments(giveaway)`:
 
-- Resolves the status id from `giveaways.post_id` (set by `gq announce`), or
-  falls back to parsing one out of a hand-pasted `post_url` *if* it is a status
-  on `GQ_ANNOUNCE_INSTANCE` (`mastodon.status_id_from_url`) — the only server
-  whose numeric ids our token can query. No announcement ⇒ no comments section.
+- Resolves the status id from `giveaways.post_id` (set when the giveaway is
+  announced, auto or manual), or falls back to parsing one out of a hand-pasted
+  `post_url` *if* it is a status on `GQ_ANNOUNCE_INSTANCE`
+  (`mastodon.status_id_from_url`) — the only server whose numeric ids our token
+  can query. No announcement ⇒ no comments section.
 - Calls `GET /api/v1/statuses/:id/context` **authenticated as the announcement
   account** (`mastodon.fetch_context`, needs `read:statuses`). Authenticated so
   the announcement account's own blocks and the instance's domain blocks are
@@ -298,8 +314,10 @@ safe (see double-wrap above).
 2. ~~Encrypt `access_token` at rest.~~ Done differently: not stored at all.
 3. `og:image` (a generated PNG per giveaway, or one static banner).
 4. Surface `GQ_ANNOUNCE_*` health somewhere (a `gq` check, or a warning at
-   startup) so a dead site token doesn't just silently skip winner DMs.
-   Optionally auto-announce listed giveaways instead of CLI-only.
+   startup) so a dead site token doesn't just silently skip winner DMs — now
+   partly visible via `announce_state` = `retrying` on the giveaway page.
+   ~~Optionally auto-announce listed giveaways instead of CLI-only.~~ Done
+   (`GQ_AUTO_ANNOUNCE`, `services.announce_due`).
 5. ~~Rate limits on login and create.~~ Done (`GQ_RATE_LIMIT`); a
    Cloudflare WAF rate-limiting rule in front would still be cheaper.
 6. Live on homek14 (not a VPS) behind Cloudflare Tunnel — no inbound ports,

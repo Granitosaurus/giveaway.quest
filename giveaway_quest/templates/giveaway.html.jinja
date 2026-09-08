@@ -204,9 +204,27 @@ g.owner_acct }}{% endblock %} {% block head %}
                 </p>
                 {% endif %}
                 <p class="text-sm text-base-content/60">
-                    {% if not g.post_url %}Not announced by {{ site_name }} yet.
-                    {% endif %}Use <strong>Share</strong> below to post this
-                    from your own account.
+                    {% if announce_state == 'announced' %}Announced from the {{
+                    site_name }} account &mdash;
+                    <a class="link" href="{{ g.post_url }}" rel="noopener"
+                        >view the post</a
+                    >. Replies to it show up as comments below.
+                    {% elif announce_state == 'pending' %}{{ site_name }} will
+                    announce this from its own account within a few minutes; the
+                    comment thread opens then.
+                    {% elif announce_state == 'retrying' %}Automatic announcement
+                    hasn't gone through yet &mdash; it will keep retrying. Check
+                    <code>GQ_ANNOUNCE_TOKEN</code>, or run
+                    <code>gq announce {{ g.slug }}</code>.
+                    {% elif announce_state == 'unlisted' %}Unlisted giveaways
+                    aren't announced automatically. List it, or run
+                    <code>gq announce {{ g.slug }}</code>, to open a comment
+                    thread.
+                    {% else %}Not announced yet. Run
+                    <code>gq announce {{ g.slug }}</code> or paste a post URL on
+                    the edit page.
+                    {% endif %} Use <strong>Share</strong> below to post from
+                    your own account.
                 </p>
                 {% if not g.drawn_at %}<a
                     href="/{{ g.slug }}/edit"

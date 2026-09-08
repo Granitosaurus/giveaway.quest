@@ -46,12 +46,12 @@ the first time someone from it logs in and is cached in the database.
 The only scope requested from a user is `read:accounts` (who are you, how old
 is the account). The site never posts, follows or messages as a logged-in
 user. The login token is used once to read the profile, then revoked and
-discarded — it is never stored. Announcements (`gq announce`), winner DMs and
-the on-page comment threads all go through the site's own account, configured
-via `GQ_ANNOUNCE_INSTANCE` / `GQ_ANNOUNCE_TOKEN` (an app token on that account
-with the `write:statuses` and `read:statuses` scopes). The database still holds
-giveaway rewards and per-instance OAuth client secrets; treat it (and backups)
-as secret.
+discarded — it is never stored. Announcements (auto-posted for every listed
+giveaway, or `gq announce`), winner DMs and the on-page comment threads all go
+through the site's own account, configured via `GQ_ANNOUNCE_INSTANCE` /
+`GQ_ANNOUNCE_TOKEN` (an app token on that account with the `write:statuses` and
+`read:statuses` scopes). The database still holds giveaway rewards and
+per-instance OAuth client secrets; treat it (and backups) as secret.
 
 ## Configuration
 
@@ -67,6 +67,7 @@ Environment variables (a `.env` file in the working directory is loaded):
 | `GQ_ANNOUNCE_INSTANCE` | empty            | Host of the site's own Mastodon account                    |
 | `GQ_ANNOUNCE_TOKEN`    | empty            | Its `write:statuses`+`read:statuses` token; enables `gq announce`, winner DMs, comments |
 | `GQ_COMMENTS`   | `1`                     | Show announcement replies as comments; `0` disables        |
+| `GQ_AUTO_ANNOUNCE` | `1`                  | Auto-announce listed giveaways from the site account; `0` = `gq announce` only |
 | `GQ_RATE_LIMIT` | `10`                    | Per-IP POSTs per minute on `/auth/login` and `/new`; `0` disables |
 
 ## Admin CLI
@@ -89,7 +90,8 @@ See `NOTES.md` for design decisions, Litestar/NixOS gotchas and follow-ups.
 ## How it fits together
 
 - `giveaway_quest/app.py` builds the Litestar app: cookie sessions, CSRF,
-  Jinja, static files, and a background task that draws overdue giveaways.
+  Jinja, static files, and a background task that draws overdue giveaways and
+  auto-announces listed ones.
 - `routes/auth.py` is the Mastodon OAuth flow (dynamic app registration per
   instance), `routes/pages.py` the HTML pages, `routes/meta.py` robots.txt and
   sitemap.xml.
