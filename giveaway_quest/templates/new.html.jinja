@@ -10,7 +10,7 @@
 
 <form method="post" action="/new" class="grid gap-6 lg:grid-cols-3">
     {{ csrf_input | safe }}
-    <div class="lg:col-span-2 space-y-4">
+    <div class="min-w-0 lg:col-span-2 space-y-4">
         <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
             <legend class="fieldset-legend">What are you giving away?</legend>
             <label class="floating-label">
@@ -51,7 +51,7 @@
         </p>
     </div>
 
-    <div class="space-y-4">
+    <div class="min-w-0 space-y-4">
         <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
             <legend class="fieldset-legend">Rules</legend>
             <label class="floating-label">
