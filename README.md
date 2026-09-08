@@ -90,8 +90,8 @@ See `NOTES.md` for design decisions, Litestar/NixOS gotchas and follow-ups.
 ## How it fits together
 
 - `giveaway_quest/app.py` builds the Litestar app: cookie sessions, CSRF,
-  Jinja, static files, and a background task that draws overdue giveaways and
-  auto-announces listed ones.
+  Jinja, static files, and a background task that draws overdue giveaways,
+  auto-announces listed ones and keeps the comment caches warm.
 - `routes/auth.py` is the Mastodon OAuth flow (dynamic app registration per
   instance), `routes/pages.py` the HTML pages, `routes/meta.py` robots.txt and
   sitemap.xml.

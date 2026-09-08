@@ -72,7 +72,11 @@ def render_markdown(text: str | None) -> str:
 # from Mastodon and cached in `comment_threads`. Logged-in users get no write
 # access here either: to comment you reply from your own Mastodon account.
 
-COMMENT_TTL = timedelta(minutes=5)
+COMMENT_TTL = timedelta(seconds=60)  # how long a cached thread is served before a refetch
+# The background loop keeps threads this fresh for giveaways that are still open
+# or ended recently, so their page never pays for the fetch; older giveaways
+# refetch on demand (once per COMMENT_TTL) when someone opens the page.
+COMMENT_WARM_AFTER_END = timedelta(days=3)
 COMMENT_MAX_DEPTH = 3  # how deep to indent; deeper replies still show, flattened
 COMMENT_HTML_MAX = 8192
 _COMMENT_VISIBILITIES = {"public", "unlisted"}
@@ -267,6 +271,32 @@ def get_comments(giveaway: dict) -> CommentThread:
             (giveaway["id"], status_id, json.dumps([asdict(c) for c in items]), now),
         )
     return CommentThread(items, now)
+
+
+def refresh_comment_threads() -> int:
+    """Warm the comment cache for giveaways still open or ended recently.
+
+    Runs from the background loop so their page never does the fetch itself.
+    `get_comments` already no-ops when the cache is still fresh, so this costs
+    one Mastodon call per active thread per `COMMENT_TTL`. Returns how many
+    threads it looked at.
+    """
+    if not (settings.comments_enabled and settings.announce_enabled):
+        return 0
+    with db.connect() as conn:
+        rows = conn.execute(
+            GIVEAWAY_SELECT
+            + """ WHERE g.hidden = 0
+                    AND ((g.post_id IS NOT NULL AND g.post_id != '')
+                         OR (g.post_url IS NOT NULL AND g.post_url != ''))
+                    AND (g.drawn_at IS NULL OR g.drawn_at > :warm)
+                  ORDER BY g.created_at DESC
+                  LIMIT 50""",
+            {"warm": db.iso(db.now() - COMMENT_WARM_AFTER_END)},
+        ).fetchall()
+    for giveaway in rows:
+        get_comments(giveaway)  # refetches iff stale and writes the cache
+    return len(rows)
 
 
 # --------------------------------------------------------------------------- users

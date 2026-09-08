@@ -142,6 +142,32 @@ def test_no_comment_section_without_an_announcement(client, fake):
     assert fake.context_calls == 0
 
 
+def test_background_refresh_warms_the_cache(client, fake):
+    slug = host_giveaway(client)
+    g = announce(slug)
+    fake.contexts[g["post_id"]] = [reply(10, g["post_id"], content="<p>warmed in advance</p>")]
+
+    assert services.refresh_comment_threads() == 1
+    assert fake.context_calls == 1
+
+    page = client.get(f"/{slug}").text  # served straight from the warm cache
+    assert "warmed in advance" in page
+    assert fake.context_calls == 1  # the page did not fetch
+
+
+def test_background_refresh_skips_long_finished_giveaways(client, fake):
+    slug = host_giveaway(client)
+    g = announce(slug)
+    fake.contexts[g["post_id"]] = [reply(10, g["post_id"])]
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE giveaways SET drawn_at = ?, ends_at = ? WHERE slug = ?",
+            (db.iso(db.now() - timedelta(days=30)), db.iso(db.now() - timedelta(days=30)), slug),
+        )
+    assert services.refresh_comment_threads() == 0
+    assert fake.context_calls == 0
+
+
 def test_pasted_announcement_url_enables_comments(client, fake):
     slug = host_giveaway(client)
     login_as(client, make_user("host@example.social"))

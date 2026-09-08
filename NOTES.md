@@ -133,11 +133,18 @@ write access here. `services.get_comments(giveaway)`:
   the announcement account's own blocks and the instance's domain blocks are
   applied for us, and to skip the unauthenticated cap (60 descendants, depth 20).
 - Caches the normalised, **already-sanitised** comment list in `comment_threads`
-  (schema v3, keyed by `giveaway_id`) for `COMMENT_TTL` (5 min). A stale/missing
-  cache triggers one fetch during that page request (handlers run in a thread,
-  so the blocking call is fine); on an API error the last good copy is served,
-  or an "unavailable, read it on Mastodon" note if there is nothing cached. No
-  background loop, no per-visitor API calls.
+  (schema v3, keyed by `giveaway_id`) for `COMMENT_TTL` (60 s). On an API error
+  the last good copy is served, or an "unavailable, read it on Mastodon" note if
+  there is nothing cached. Never a per-visitor API call.
+- Freshness: the background loop (`services.refresh_comment_threads`) re-warms
+  the cache each tick for every giveaway that is still open or ended within
+  `COMMENT_WARM_AFTER_END` (3 days), so those pages never do the fetch
+  themselves and new replies appear within ~a loop tick + TTL. Older giveaways
+  aren't warmed — opening one refetches inline (once per `COMMENT_TTL`, in the
+  handler thread, so the blocking call is fine). Web Push / the streaming API
+  were considered for instant updates and rejected: Push needs a public
+  encrypted-payload receiver, streaming needs a persistent authenticated
+  WebSocket + reconnect logic — too much moving part to shave a minute.
 - `parse_descendants` keeps only `public`/`unlisted` statuses from accounts not
   `banned` on giveaway.quest, threads them depth-first from the root (orphans
   whose parent was filtered out still show, near the top), and caps the indent
