@@ -1,0 +1,92 @@
+{# Reply thread of the giveaway's Mastodon announcement, shown read-only.
+   `comments` is a services.CommentThread. To take part you reply from your own
+   Mastodon account - the site never posts for logged-in users. #}
+{% set indent = ["", "sm:ml-6", "sm:ml-12", "sm:ml-[4.5rem]"] %}
+{% if g.post_id or comments.items or comments.unavailable %}
+<section id="comments" class="card bg-base-100 shadow-sm">
+    <div class="card-body gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <h2 class="card-title">
+                Comments{% if comments.items %}
+                <span class="text-base-content/50 font-normal"
+                    >{{ comments.count }}</span
+                >{% endif %}
+            </h2>
+            {% if g.post_url %}
+            <a
+                class="btn btn-sm btn-outline"
+                href="{{ g.post_url }}"
+                target="_blank"
+                rel="noopener"
+                >Reply on Mastodon</a
+            >
+            {% endif %}
+        </div>
+
+        <p class="text-sm text-base-content/60">
+            Comments are replies to the {{ site_name }} announcement post. Reply
+            from any Mastodon account to join in; new replies can take a few
+            minutes to appear here.
+        </p>
+
+        {% if comments.unavailable %}
+        <p class="text-sm text-base-content/70">
+            Comments couldn't be loaded right now.{% if g.post_url %} You can
+            <a
+                class="link"
+                href="{{ g.post_url }}"
+                target="_blank"
+                rel="noopener"
+                >read the thread on Mastodon</a
+            >.{% endif %}
+        </p>
+        {% elif not comments.items %}
+        <p class="text-sm text-base-content/60">
+            No comments yet.{% if not g.post_url and (is_owner or is_admin) %}
+            Announce this giveaway from the {{ site_name }} account to open a
+            thread.{% endif %}
+        </p>
+        {% endif %}
+
+        {% for c in comments.items %}
+        <article class="flex gap-3 {{ indent[c.depth] if c.depth < indent|length else indent[-1] }}">
+            {% if c.author_avatar %}<img
+                src="{{ c.author_avatar }}"
+                alt=""
+                loading="lazy"
+                class="w-8 h-8 rounded-full flex-none"
+            />{% endif %}
+            <div class="min-w-0 space-y-1">
+                <div
+                    class="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm"
+                >
+                    {% if c.author_url %}<a
+                        class="link font-medium"
+                        href="{{ c.author_url }}"
+                        target="_blank"
+                        rel="noopener"
+                        >{{ c.author_name }}</a
+                    >{% else %}<span class="font-medium">{{ c.author_name }}</span
+                    >{% endif %}
+                    <span class="text-base-content/50 truncate"
+                        >@{{ c.author_acct }}</span
+                    >
+                    {% if c.permalink %}<a
+                        class="text-base-content/50 hover:underline"
+                        href="{{ c.permalink }}"
+                        target="_blank"
+                        rel="noopener"
+                        ><time datetime="{{ c.created_at }}" data-local
+                            >{{ c.created_at | human }}</time
+                        ></a
+                    >{% endif %}
+                </div>
+                <div class="quest-md text-sm break-words">
+                    {{ c.html | safe }}
+                </div>
+            </div>
+        </article>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}

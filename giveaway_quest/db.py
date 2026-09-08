@@ -68,6 +68,16 @@ CREATE TABLE IF NOT EXISTS entries (
     UNIQUE (giveaway_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS entries_giveaway ON entries (giveaway_id);
+
+-- Cached reply thread of the Mastodon announcement post, shown as comments.
+-- `payload` is the normalised, already-sanitised comment list as JSON; refreshed
+-- when older than services.COMMENT_TTL. Nothing here is authoritative.
+CREATE TABLE IF NOT EXISTS comment_threads (
+    giveaway_id INTEGER PRIMARY KEY REFERENCES giveaways(id) ON DELETE CASCADE,
+    status_id   TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    fetched_at  TEXT NOT NULL
+);
 """
 
 
@@ -93,7 +103,7 @@ def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 def _migrate(conn: sqlite3.Connection, version: int) -> None:
@@ -110,6 +120,11 @@ def _migrate(conn: sqlite3.Connection, version: int) -> None:
             conn.execute("ALTER TABLE giveaways RENAME COLUMN secret TO reward")
         if "secret_viewed_at" in columns:
             conn.execute("ALTER TABLE giveaways RENAME COLUMN secret_viewed_at TO reward_viewed_at")
+    if version < 3:
+        # v3: added the `comment_threads` cache table. It is created by the
+        # `CREATE TABLE IF NOT EXISTS` in SCHEMA above, so there is nothing to do
+        # here but record the bump.
+        pass
 
 
 def init_db(path: Path | None = None) -> None:

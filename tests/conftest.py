@@ -27,6 +27,10 @@ class FakeMastodon:
         self.accounts: dict[str, mastodon.RemoteAccount] = {}
         self.revoked: list[str] = []
         self.fail_post = False
+        # status_id -> list of `descendants` status dicts for fetch_context
+        self.contexts: dict[str, list[dict]] = {}
+        self.context_calls = 0
+        self.fail_context = False
 
     def get_or_register_app(self, conn, instance):
         return {
@@ -52,6 +56,12 @@ class FakeMastodon:
         self.posted.append({"instance": instance, "text": text, "visibility": visibility})
         return {"id": str(len(self.posted)), "url": f"https://{instance}/@x/{len(self.posted)}"}
 
+    def fetch_context(self, instance, token, status_id):
+        self.context_calls += 1
+        if self.fail_context:
+            raise mastodon.MastodonError("thread unavailable")
+        return {"ancestors": [], "descendants": self.contexts.get(str(status_id), [])}
+
 
 @pytest.fixture
 def fake(monkeypatch) -> FakeMastodon:
@@ -62,6 +72,7 @@ def fake(monkeypatch) -> FakeMastodon:
         "verify_credentials",
         "revoke_token",
         "post_status",
+        "fetch_context",
     ):
         monkeypatch.setattr(mastodon, name, getattr(fm, name))
     return fm

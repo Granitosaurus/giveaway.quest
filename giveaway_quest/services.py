@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import re
 import secrets
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import timedelta
 
 import markdown_it
@@ -60,6 +61,209 @@ def render_markdown(text: str | None) -> str:
     if not text:
         return ""
     return nh3.clean(_MD.render(text), tags=_MD_TAGS, attributes=_MD_ATTRS)
+
+
+# ------------------------------------------------------------------------- comments
+#
+# Comments are the reply thread under the giveaway's announcement post, pulled
+# from Mastodon and cached in `comment_threads`. Logged-in users get no write
+# access here either: to comment you reply from your own Mastodon account.
+
+COMMENT_TTL = timedelta(minutes=5)
+COMMENT_MAX_DEPTH = 3  # how deep to indent; deeper replies still show, flattened
+COMMENT_HTML_MAX = 8192
+_COMMENT_VISIBILITIES = {"public", "unlisted"}
+# Remote, server-rendered HTML from whatever instance the replier is on. Keep the
+# inline text tags Mastodon actually emits and links; drop everything else
+# (including class/style, so mention/hashtag spans become plain text/links). nh3
+# also strips <script>/<style> content outright.
+_COMMENT_TAGS = {
+    "p",
+    "br",
+    "a",
+    "span",
+    "strong",
+    "b",
+    "em",
+    "i",
+    "del",
+    "ul",
+    "ol",
+    "li",
+    "blockquote",
+    "code",
+    "pre",
+}
+_COMMENT_ATTRS = {"a": {"href"}}
+
+
+def sanitize_comment_html(html: str | None) -> str:
+    return nh3.clean(
+        (html or "")[:COMMENT_HTML_MAX],
+        tags=_COMMENT_TAGS,
+        attributes=_COMMENT_ATTRS,
+        link_rel="nofollow noopener noreferrer ugc",
+        url_schemes={"http", "https", "mailto"},
+    )
+
+
+@dataclass(slots=True)
+class Comment:
+    id: str
+    author_name: str
+    author_acct: str
+    author_url: str
+    author_avatar: str
+    html: str
+    created_at: str
+    permalink: str
+    depth: int
+
+
+@dataclass(slots=True)
+class CommentThread:
+    items: list[Comment] = field(default_factory=list)
+    updated_at: str | None = None
+    unavailable: bool = False  # True only when there is nothing to show *and* the fetch failed
+
+    @property
+    def count(self) -> int:
+        return len(self.items)
+
+
+def _comment_from_status(status: dict, depth: int) -> Comment | None:
+    account = status.get("account")
+    if not isinstance(account, dict):
+        return None
+    name = account.get("display_name") or account.get("username") or "someone"
+    acct = account.get("acct") or account.get("username") or ""
+    return Comment(
+        id=str(status.get("id", "")),
+        author_name=str(name)[:200],
+        author_acct=str(acct)[:200],
+        author_url=mastodon.safe_https_url(account.get("url")),
+        author_avatar=mastodon.safe_https_url(
+            account.get("avatar_static") or account.get("avatar")
+        ),
+        html=sanitize_comment_html(status.get("content")),
+        created_at=str(status.get("created_at") or ""),
+        permalink=mastodon.safe_https_url(status.get("url") or status.get("uri")),
+        depth=min(depth, COMMENT_MAX_DEPTH),
+    )
+
+
+def parse_descendants(root_id: str, descendants: list, banned_accts: set[str]) -> list[Comment]:
+    """Turn a Mastodon `context.descendants` list into a threaded comment list.
+
+    Filters to public/unlisted statuses from non-banned accounts, then walks the
+    reply tree depth-first from the root post so replies sit under their parent.
+    Anything whose parent got filtered out is still shown, near the top.
+    """
+    kept: dict[str, dict] = {}
+    for status in descendants:
+        if not isinstance(status, dict) or not status.get("id"):
+            continue
+        if status.get("visibility") not in _COMMENT_VISIBILITIES:
+            continue
+        account = status.get("account")
+        acct = (account.get("acct") if isinstance(account, dict) else "") or ""
+        if acct.lower() in banned_accts:
+            continue
+        kept[str(status["id"])] = status
+
+    children: dict[str, list[str]] = {}
+    for sid, status in kept.items():
+        parent = str(status.get("in_reply_to_id") or "")
+        children.setdefault(parent, []).append(sid)
+
+    def _sort(ids: list[str]) -> list[str]:
+        return sorted(ids, key=lambda sid: str(kept[sid].get("created_at") or ""))
+
+    out: list[Comment] = []
+    seen: set[str] = set()
+
+    def walk(parent_id: str, depth: int) -> None:
+        for sid in _sort(children.get(parent_id, [])):
+            if sid in seen:
+                continue
+            seen.add(sid)
+            comment = _comment_from_status(kept[sid], depth)
+            if comment:
+                out.append(comment)
+            walk(sid, depth + 1)
+
+    walk(str(root_id), 0)
+    # Orphans: kept replies whose parent was filtered out (e.g. a deleted or
+    # followers-only mid-thread post). Show them rather than silently dropping.
+    for sid in _sort([s for s in kept if s not in seen]):
+        comment = _comment_from_status(kept[sid], 1)
+        if comment:
+            out.append(comment)
+    return out
+
+
+def _banned_accts(conn: sqlite3.Connection) -> set[str]:
+    return {row["acct"].lower() for row in conn.execute("SELECT acct FROM users WHERE banned = 1")}
+
+
+def _load_comments(payload: str) -> list[Comment]:
+    try:
+        return [Comment(**row) for row in json.loads(payload)]
+    except (ValueError, TypeError):
+        return []
+
+
+def comments_status_id(giveaway: dict) -> str:
+    """The Mastodon status id whose replies are this giveaway's comments, or ''."""
+    if giveaway["post_id"]:
+        return str(giveaway["post_id"])
+    return mastodon.status_id_from_url(giveaway["post_url"], settings.announce_instance) or ""
+
+
+def get_comments(giveaway: dict) -> CommentThread:
+    """Cached reply thread for a giveaway. Opens its own connections (it does I/O)."""
+    if not (settings.comments_enabled and settings.announce_enabled):
+        return CommentThread()
+    status_id = comments_status_id(giveaway)
+    if not status_id:
+        return CommentThread()
+
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT payload, fetched_at FROM comment_threads WHERE giveaway_id = ?",
+            (giveaway["id"],),
+        ).fetchone()
+    if (
+        row
+        and db.parse_iso(row["fetched_at"])
+        and db.parse_iso(row["fetched_at"]) > (db.now() - COMMENT_TTL)
+    ):
+        return CommentThread(_load_comments(row["payload"]), row["fetched_at"])
+
+    try:
+        context = mastodon.fetch_context(
+            settings.announce_instance, settings.announce_token, status_id
+        )
+    except mastodon.MastodonError:
+        if row:
+            return CommentThread(_load_comments(row["payload"]), row["fetched_at"])
+        return CommentThread(unavailable=True)
+
+    descendants = context.get("descendants")
+    now = db.iso(db.now())
+    with db.connect() as conn:
+        items = parse_descendants(
+            status_id, descendants if isinstance(descendants, list) else [], _banned_accts(conn)
+        )
+        conn.execute(
+            """INSERT INTO comment_threads (giveaway_id, status_id, payload, fetched_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(giveaway_id) DO UPDATE SET
+                 status_id = excluded.status_id, payload = excluded.payload,
+                 fetched_at = excluded.fetched_at""",
+            (giveaway["id"], status_id, json.dumps([asdict(c) for c in items]), now),
+        )
+    return CommentThread(items, now)
 
 
 # --------------------------------------------------------------------------- users
@@ -253,10 +457,17 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
     post_url = _clean_text(data.get("post_url"), 500, name="Post URL")
     if post_url and not post_url.startswith("https://"):
         raise ValidationError("Post URL must start with https://")
+    # Keep post_id in step with a hand-pasted URL so comments work without
+    # `gq announce`, but only when the URL is a status on our own announcement
+    # instance (the only server whose ids our token can query).
+    post_id = (
+        mastodon.status_id_from_url(post_url, settings.announce_instance) if post_url else None
+    )
     conn.execute(
-        """UPDATE giveaways SET conditions = ?, quest = ?, listed = ?, ends_at = ?, post_url = ?
+        """UPDATE giveaways
+             SET conditions = ?, quest = ?, listed = ?, ends_at = ?, post_url = ?, post_id = ?
            WHERE id = ?""",
-        (conditions, quest, int(listed), ends_at, post_url or None, giveaway["id"]),
+        (conditions, quest, int(listed), ends_at, post_url or None, post_id, giveaway["id"]),
     )
     return get_giveaway(conn, giveaway["slug"])
 

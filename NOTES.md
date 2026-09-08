@@ -103,6 +103,40 @@ Quest and reward both use the `md_editor` macro in `templates/_forms.html.jinja`
 
 The Mastodon post itself is never modified or deleted by the site.
 
+**Comments.** The comment thread on a giveaway page *is* the reply tree under
+its announcement post — the same "reply from your own account" model every
+"comments powered by Mastodon" setup uses, so logged-in users still get no
+write access here. `services.get_comments(giveaway)`:
+
+- Resolves the status id from `giveaways.post_id` (set by `gq announce`), or
+  falls back to parsing one out of a hand-pasted `post_url` *if* it is a status
+  on `GQ_ANNOUNCE_INSTANCE` (`mastodon.status_id_from_url`) — the only server
+  whose numeric ids our token can query. No announcement ⇒ no comments section.
+- Calls `GET /api/v1/statuses/:id/context` **authenticated as the announcement
+  account** (`mastodon.fetch_context`, needs `read:statuses`). Authenticated so
+  the announcement account's own blocks and the instance's domain blocks are
+  applied for us, and to skip the unauthenticated cap (60 descendants, depth 20).
+- Caches the normalised, **already-sanitised** comment list in `comment_threads`
+  (schema v3, keyed by `giveaway_id`) for `COMMENT_TTL` (5 min). A stale/missing
+  cache triggers one fetch during that page request (handlers run in a thread,
+  so the blocking call is fine); on an API error the last good copy is served,
+  or an "unavailable, read it on Mastodon" note if there is nothing cached. No
+  background loop, no per-visitor API calls.
+- `parse_descendants` keeps only `public`/`unlisted` statuses from accounts not
+  `banned` on giveaway.quest, threads them depth-first from the root (orphans
+  whose parent was filtered out still show, near the top), and caps the indent
+  at depth 3. `content` is remote server-rendered HTML → `nh3` allowlist
+  (`_COMMENT_TAGS`, only `href` on `<a>`, `rel="nofollow noopener noreferrer
+  ugc"`, http/https/mailto only); avatars/links go through
+  `mastodon.safe_https_url`. Custom emoji are left as `:shortcode:` text for now.
+- Rendered server-side in `templates/_comments.html.jinja` (no JS, so the strict
+  CSP is untouched — same-origin HTML, `img-src https:` already covers avatars).
+  "Reply on Mastodon" is a plain link to `post_url`.
+- `GQ_COMMENTS=0` is a kill switch; otherwise the feature is gated on
+  `announce_enabled and` a resolvable status id. No `configuration.nix` egress
+  change needed — the announcement instance is public internet, already reached
+  for login/announce/DMs.
+
 ## Mastodon / OAuth details
 
 - App registration is dynamic: `POST /api/v1/apps` per instance, cached in
@@ -111,8 +145,10 @@ The Mastodon post itself is never modified or deleted by the site.
 - Scope: `read:accounts` only (login just reads the profile). The scope
   string must match at registration and authorization or Mastodon rejects
   the token exchange; changing `MASTODON_SCOPES` re-registers the app per
-  instance automatically. The site's own posting account uses a separate
-  manually-issued `write:statuses` token (`GQ_ANNOUNCE_TOKEN`), not this flow.
+  instance automatically. The site's own account uses a separate
+  manually-issued token (`GQ_ANNOUNCE_TOKEN`) with `write:statuses` (announce,
+  winner DMs) and `read:statuses` (the announcement's reply thread for
+  comments), not this flow.
 - The OAuth `state` lives in the cookie session (`request.session["oauth"]`),
   is compared with `secrets.compare_digest`, and is popped on the first
   callback, so a callback URL can't be replayed.

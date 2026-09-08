@@ -140,6 +140,7 @@ def giveaway_page(
         share_url=share_url,
         toot_text=toot_text,
         share_mastodon_url=mastodon.share_url(toot_text),
+        comments=services.get_comments(giveaway),
     )
 
 

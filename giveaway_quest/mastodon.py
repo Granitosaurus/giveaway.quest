@@ -186,6 +186,45 @@ def revoke_token(app: dict, token: str) -> None:
         pass
 
 
+STATUS_URL_RE = re.compile(r"^https://(?P<host>[a-z0-9.-]+)/@[A-Za-z0-9_]+/(?P<id>\d+)/?$")
+
+
+def status_id_from_url(url: str | None, instance: str) -> str | None:
+    """Pull the numeric id out of a ``https://<instance>/@user/12345`` status URL.
+
+    Used so a giveaway announced by pasting its post URL (rather than via
+    ``gq announce``) can still show a comment thread. Only URLs on the site's
+    own announcement instance are accepted - that is the only server whose
+    numeric status ids we can query with our token.
+    """
+    match = STATUS_URL_RE.match((url or "").strip())
+    if match and match.group("host") == instance:
+        return match.group("id")
+    return None
+
+
+def fetch_context(instance: str, token: str, status_id: str) -> dict:
+    """Fetch a status's thread (ancestors + descendants) as the site's own account.
+
+    Authenticated so we get the full public thread plus the announcement
+    account's own blocks / the instance's domain blocks applied for us, rather
+    than the unauthenticated cap (60 descendants, depth 20). Needs ``read:statuses``.
+    """
+    try:
+        resp = httpx.get(
+            f"https://{instance}/api/v1/statuses/{status_id}/context",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=TIMEOUT,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if not isinstance(data, dict):
+            raise MastodonError(f"{instance} returned an unexpected thread payload.")
+        return data
+    except (httpx.HTTPError, ValueError) as exc:
+        raise MastodonError(f"Could not read the thread from {instance}: {exc}") from exc
+
+
 def post_status(instance: str, token: str, text: str, *, visibility: str = "public") -> dict:
     """Post a status from the site's own account. Returns the created status ('id' and 'url')."""
     try:
