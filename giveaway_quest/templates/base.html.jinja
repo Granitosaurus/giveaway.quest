@@ -52,6 +52,29 @@
         />
         <!-- Blocking on purpose: applies a saved theme before first paint. External (not inline) so the CSP can stay script-src 'self'. -->
         <script src="/static/theme.js?v={{ version }}"></script>
+        {# Site identity for search engines. Not executed, so script-src 'self' does not apply. #}
+        <script type="application/ld+json">
+            {
+                "@context": "https://schema.org",
+                "@graph": [
+                    {
+                        "@type": "Organization",
+                        "@id": {{ (base_url ~ "/#org") | tojson }},
+                        "name": {{ site_name | tojson }},
+                        "url": {{ (base_url ~ "/") | tojson }},
+                        "logo": {{ (base_url ~ "/static/icons/favicon-512x512.png") | tojson }},
+                        "sameAs": ["https://fosstodon.org/@giveaway_quest"]
+                    },
+                    {
+                        "@type": "WebSite",
+                        "@id": {{ (base_url ~ "/#website") | tojson }},
+                        "name": {{ site_name | tojson }},
+                        "url": {{ (base_url ~ "/") | tojson }},
+                        "publisher": { "@id": {{ (base_url ~ "/#org") | tojson }} }
+                    }
+                ]
+            }
+        </script>
         {% block head %}{% endblock %}
     </head>
     <body class="min-h-screen flex flex-col bg-base-200">

@@ -250,8 +250,21 @@ write access here. `services.get_comments(giveaway)`:
   arbitrary instances; `form-action` must include `https:` because browsers
   apply it to the redirect after `POST /auth/login`.
 - Rich previews: `og:title`, `og:description`, `og:url`, `twitter:card`, and
-  `fediverse:creator`. No `og:image` yet; Mastodon renders a text card
-  without one.
+  `fediverse:creator`. `og:image`/`twitter:image` point at the 512×512 favicon
+  PNG (no per-giveaway art yet), which is enough for Mastodon to render a
+  thumbnailed card instead of a bare text one. Mastodon caches preview cards
+  for ~2 weeks, so already-posted links keep the old card until it expires.
+- Structured data (JSON-LD, `<script type="application/ld+json">` — not
+  executed, so `script-src 'self'` does not block it): base template emits a
+  site-wide `Organization` + `WebSite` `@graph` (logo + `sameAs` the
+  fosstodon account — feeds Google's site name/logo); `giveaway.html.jinja`
+  adds a `BreadcrumbList` and an `Event` (start = `created_at`, end =
+  `ends_at`, online `VirtualLocation`, `organizer` = the host `Person`).
+  Interpolate every value through Jinja's `| tojson` so it stays JSON- and
+  HTML-safe under autoescape. `Event` is a slight stretch for a giveaway and
+  Google may not grant rich results; `Product`/`Offer` on the prize was
+  skipped deliberately (price-0 giveaway offers risk the structured-data spam
+  policy, and the reward is winner-only anyway).
 
 ## Litestar gotchas hit (2.24.0)
 
@@ -319,7 +332,9 @@ safe (see double-wrap above).
 1. Log in with a real account and run through create → post → enter → draw
    on a second account.
 2. ~~Encrypt `access_token` at rest.~~ Done differently: not stored at all.
-3. `og:image` (a generated PNG per giveaway, or one static banner).
+3. Per-giveaway `og:image` (a generated PNG with the title/host rendered in).
+   `og:image` now falls back to the 512×512 favicon, so cards are no longer
+   text-only, but a real banner would read far better in a timeline.
 4. Surface `GQ_ANNOUNCE_*` health somewhere (a `gq` check, or a warning at
    startup) so a dead site token doesn't just silently skip winner DMs — now
    partly visible via `announce_state` = `retrying` on the giveaway page.
