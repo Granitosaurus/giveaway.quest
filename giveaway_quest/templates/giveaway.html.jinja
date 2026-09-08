@@ -18,6 +18,40 @@ g.owner_acct }}{% endblock %} {% block head %}
 <meta name="twitter:card" content="summary" />
 <meta name="twitter:image" content="{{ base_url }}/static/icons/favicon-512x512.png" />
 <meta name="fediverse:creator" content="@{{ g.owner_acct }}" />
+{# Not executed, so script-src 'self' does not apply. tojson keeps values JSON- and HTML-safe. #}
+<script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            { "@type": "ListItem", "position": 1, "name": "Quest Board", "item": {{ (base_url ~ "/") | tojson }} },
+            { "@type": "ListItem", "position": 2, "name": {{ g.title | tojson }} }
+        ]
+    }
+</script>
+<script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Event",
+        "name": {{ g.title | tojson }},
+        "description": {{ (g.quest or ("A giveaway on " ~ site_name)) | tojson }},
+        "url": {{ share_url | tojson }},
+        "startDate": {{ g.created_at | tojson }},
+        "endDate": {{ g.ends_at | tojson }},
+        "eventStatus": "https://schema.org/EventScheduled",
+        "eventAttendanceMode": "https://schema.org/OnlineEventAttendanceMode",
+        "isAccessibleForFree": true,
+        "image": {{ (base_url ~ "/static/icons/favicon-512x512.png") | tojson }},
+        "location": { "@type": "VirtualLocation", "url": {{ share_url | tojson }} },
+        "organizer": {
+            "@type": "Person",
+            "name": {{ (g.owner_name or g.owner_acct) | tojson }},
+            {% if g.owner_profile_url %}"url": {{ g.owner_profile_url | tojson }},{% endif %}
+            {% if g.owner_avatar %}"image": {{ g.owner_avatar | tojson }},{% endif %}
+            "identifier": {{ ("@" ~ g.owner_acct) | tojson }}
+        }
+    }
+</script>
 {% endblock %} {% block content %}
 <article class="grid gap-6 lg:grid-cols-3">
     <div class="min-w-0 lg:col-span-2 space-y-6">

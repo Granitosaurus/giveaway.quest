@@ -1,3 +1,5 @@
+import json
+import re
 import sqlite3
 from datetime import timedelta
 
@@ -5,6 +7,18 @@ import pytest
 
 from giveaway_quest import db, mastodon, services
 from tests.conftest import create_giveaway, csrf, login_as, make_user
+
+_LD_JSON = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
+
+
+def _ld_objects(html: str) -> dict:
+    """Structured-data blocks on a page, keyed by top-level @type (skips @graph blocks)."""
+    out = {}
+    for block in _LD_JSON.findall(html):
+        obj = json.loads(block)
+        if "@type" in obj:
+            out[obj["@type"]] = obj
+    return out
 
 
 def test_schema_v1_to_v2_renames_secret_to_reward(tmp_path):
@@ -42,6 +56,11 @@ def test_front_page_and_meta(client):
     assert sitemap.status_code == 200 and "<urlset" in sitemap.text
     assert client.get("/does-not-exist").status_code == 404
     assert client.get("/new", follow_redirects=False).status_code == 302
+
+    graphs = [json.loads(b) for b in _LD_JSON.findall(client.get("/").text)]
+    assert len(graphs) == 1
+    types = {node["@type"] for node in graphs[0]["@graph"]}
+    assert types == {"Organization", "WebSite"}
 
 
 def test_oauth_login_roundtrip(client, fake):
@@ -100,6 +119,12 @@ def test_create_announce_enter_draw_win(client, fake):
     page = client.get(f"/{slug}")
     assert "Share on Mastodon" in page.text
     assert "share.joinmastodon.org/#text=" in page.text
+
+    # the giveaway page carries valid Event + BreadcrumbList structured data
+    ld = _ld_objects(page.text)
+    assert ld["Event"]["url"].endswith(f"/{slug}")
+    assert ld["Event"]["organizer"]["identifier"] == "@host@example.social"
+    assert [i["position"] for i in ld["BreadcrumbList"]["itemListElement"]] == [1, 2]
 
     # an admin announces it from the site's own account
     with db.connect() as conn:
