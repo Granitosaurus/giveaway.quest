@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS giveaways (
     hidden               INTEGER NOT NULL DEFAULT 0, -- admin moderation
     post_url             TEXT,
     post_id              TEXT,
+    announce_attempted_at TEXT,               -- last auto-announce try (for retry spacing)
     created_at           TEXT NOT NULL,
     ends_at              TEXT NOT NULL,
     drawn_at             TEXT,
@@ -103,7 +104,7 @@ def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 def _migrate(conn: sqlite3.Connection, version: int) -> None:
@@ -125,6 +126,11 @@ def _migrate(conn: sqlite3.Connection, version: int) -> None:
         # `CREATE TABLE IF NOT EXISTS` in SCHEMA above, so there is nothing to do
         # here but record the bump.
         pass
+    if version < 4:
+        # v4: auto-announce needs to remember the last attempt to space retries.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
+        if "announce_attempted_at" not in columns:
+            conn.execute("ALTER TABLE giveaways ADD COLUMN announce_attempted_at TEXT")
 
 
 def init_db(path: Path | None = None) -> None:

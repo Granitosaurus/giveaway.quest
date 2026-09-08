@@ -33,6 +33,11 @@ class Settings:
     # giveaway page. Needs an announcement account (GQ_ANNOUNCE_*) whose token
     # also carries `read:statuses`. Set GQ_COMMENTS=0 to turn the feature off.
     comments_enabled: bool = True
+    # Post an announcement from the site's own account for every listed giveaway
+    # automatically (a background pass), which is also what opens its comment
+    # thread. Needs GQ_ANNOUNCE_*. Set GQ_AUTO_ANNOUNCE=0 to keep `gq announce`
+    # the only path.
+    auto_announce: bool = True
     # Per-client-IP cap on the expensive/abusable POSTs (login start, create),
     # requests per minute per path. 0 disables (tests).
     rate_limit: int = 10
@@ -81,6 +86,7 @@ def load_settings() -> Settings:
         announce_instance=os.environ.get("GQ_ANNOUNCE_INSTANCE", "").strip().lower(),
         announce_token=os.environ.get("GQ_ANNOUNCE_TOKEN", "").strip(),
         comments_enabled=_truthy(os.environ.get("GQ_COMMENTS", "1")),
+        auto_announce=_truthy(os.environ.get("GQ_AUTO_ANNOUNCE", "1")),
         rate_limit=int(os.environ.get("GQ_RATE_LIMIT", "10") or 0),
         version=os.environ.get("GQ_VERSION", "").strip() or __version__,
     )

@@ -28,25 +28,26 @@ from .web import current_user, render
 
 log = logging.getLogger("giveaway_quest")
 HERE = Path(__file__).parent
-DRAW_INTERVAL_SECONDS = 30
+LOOP_INTERVAL_SECONDS = 30
 
 
-async def drawer_loop() -> None:
-    """Draw winners for giveaways whose deadline passed. Runs for the life of the process."""
+async def background_loop() -> None:
+    """Draw due winners and auto-announce listed giveaways. Runs for the life of the process."""
     while True:
         try:
-            drawn = await anyio.to_thread.run_sync(services.draw_due)
-            for slug in drawn:
+            for slug in await anyio.to_thread.run_sync(services.draw_due):
                 log.info("drew winner for %s", slug)
+            for slug in await anyio.to_thread.run_sync(services.announce_due):
+                log.info("announced %s", slug)
         except Exception:  # noqa: BLE001 - never let the loop die
-            log.exception("draw loop failed")
-        await asyncio.sleep(DRAW_INTERVAL_SECONDS)
+            log.exception("background loop failed")
+        await asyncio.sleep(LOOP_INTERVAL_SECONDS)
 
 
 @asynccontextmanager
 async def lifespan(app: Litestar) -> AsyncIterator[None]:
     db.init_db()
-    task = asyncio.create_task(drawer_loop())
+    task = asyncio.create_task(background_loop())
     try:
         yield
     finally:

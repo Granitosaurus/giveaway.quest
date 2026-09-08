@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import secrets
 import sqlite3
@@ -15,6 +16,8 @@ import nh3
 from . import db, mastodon
 from .config import settings
 from .slugs import new_slug
+
+log = logging.getLogger(__name__)
 
 TITLE_MAX = 120
 TEXT_MAX = 2000
@@ -444,6 +447,68 @@ def announce_on_mastodon(conn: sqlite3.Connection, giveaway: dict, text: str) ->
         (status.get("url") or status.get("uri"), str(status.get("id", "")), giveaway["id"]),
     )
     return get_giveaway(conn, giveaway["slug"])
+
+
+ANNOUNCE_RETRY = timedelta(minutes=30)  # min gap between auto-announce attempts for one giveaway
+
+
+def announce_state(giveaway: dict) -> str:
+    """How the Mastodon announcement stands, for the host/admin panel.
+
+    ``announced`` (a post is bound), ``pending`` (auto-announce will post it
+    within a loop tick), ``retrying`` (a previous auto-announce attempt failed
+    and will be retried), ``unlisted`` (auto-announce skips it), ``manual``
+    (auto-announce is off - use ``gq announce`` or paste a URL).
+    """
+    if giveaway["post_url"] or giveaway["post_id"]:
+        return "announced"
+    if not (settings.announce_enabled and settings.auto_announce):
+        return "manual"
+    if not giveaway["listed"]:
+        return "unlisted"
+    return "retrying" if giveaway["announce_attempted_at"] else "pending"
+
+
+def announce_due() -> list[str]:
+    """Announce listed giveaways the site hasn't posted yet. Returns the slugs announced.
+
+    Runs from the background loop. Retries a failed giveaway no more than once
+    per ``ANNOUNCE_RETRY`` so a broken token doesn't spin; ``gq announce`` is the
+    manual override and ignores this.
+    """
+    if not (settings.announce_enabled and settings.auto_announce):
+        return []
+    with db.connect() as conn:
+        rows = conn.execute(
+            GIVEAWAY_SELECT
+            + """ WHERE g.listed = 1 AND g.hidden = 0 AND g.drawn_at IS NULL
+                    AND g.ends_at > :now
+                    AND (g.post_id IS NULL OR g.post_id = '')
+                    AND (g.post_url IS NULL OR g.post_url = '')
+                    AND (g.announce_attempted_at IS NULL OR g.announce_attempted_at < :cutoff)
+                  ORDER BY g.created_at""",
+            {"now": db.iso(db.now()), "cutoff": db.iso(db.now() - ANNOUNCE_RETRY)},
+        ).fetchall()
+    announced: list[str] = []
+    for giveaway in rows:
+        with db.connect() as conn:
+            conn.execute(
+                "UPDATE giveaways SET announce_attempted_at = ? WHERE id = ?",
+                (db.iso(db.now()), giveaway["id"]),
+            )
+            try:
+                announce_on_mastodon(conn, giveaway, _auto_announce_text(giveaway))
+            except mastodon.MastodonError as exc:
+                log.warning("auto-announce failed for %s: %s", giveaway["slug"], exc)
+                continue
+        announced.append(giveaway["slug"])
+    return announced
+
+
+def _auto_announce_text(giveaway: dict) -> str:
+    # Host-written title/quest → keep the official account from mentioning,
+    # tagging or linking whatever the host typed (same rule as `gq announce`).
+    return neutralize_for_post(suggested_post_text(giveaway["title"], giveaway["quest"]))
 
 
 def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, str]) -> dict:
