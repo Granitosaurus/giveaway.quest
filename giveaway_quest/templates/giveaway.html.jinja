@@ -14,7 +14,7 @@ g.owner_acct }}{% endblock %} {% block head %}
 <meta name="fediverse:creator" content="@{{ g.owner_acct }}" />
 {% endblock %} {% block content %}
 <article class="grid gap-6 lg:grid-cols-3">
-    <div class="lg:col-span-2 space-y-6">
+    <div class="min-w-0 lg:col-span-2 space-y-6">
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body gap-4">
                 <div class="flex flex-wrap items-center gap-2">
@@ -40,7 +40,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                         >hidden by admin</span
                     >{% endif %}
                 </div>
-                <h1 class="text-3xl font-bold leading-tight font-quest">
+                <h1 class="text-3xl font-bold leading-tight font-quest break-words">
                     {{ g.title }}
                 </h1>
                 <div class="flex items-center gap-2 text-sm">
@@ -80,7 +80,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                 {% endif %} {% if g.conditions %}
                 <div>
                     <h2 class="font-semibold mb-1">Conditions</h2>
-                    <p class="whitespace-pre-line text-sm">
+                    <p class="whitespace-pre-line break-words text-sm">
                         {{ g.conditions }}
                     </p>
                 </div>
@@ -157,7 +157,7 @@ g.owner_acct }}{% endblock %} {% block head %}
         {% endif %}
     </div>
 
-    <aside class="space-y-4">
+    <aside class="min-w-0 space-y-4">
         {% if status == 'open' %}
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body items-center text-center">

@@ -85,10 +85,29 @@
 
 @source "../giveaway_quest/templates";
 
+/* Mobile overflow guard. daisyUI form controls live in flex/grid containers
+   (.fieldset, .floating-label, the grid on /new and /giveaway), whose default
+   min-width:auto refuses to shrink a child below its intrinsic size. A
+   <textarea>/<input> carries an intrinsic width from its cols/size default
+   (~20 chars), so on a phone these push the page wider than the viewport even
+   with `w-full`. Letting the containers and controls shrink to 0 fixes it. */
+.fieldset,
+.fieldset > *,
+.floating-label,
+[data-md-editor] {
+  min-width: 0;
+}
+.input,
+.textarea,
+.select {
+  min-width: 0;
+}
+
 /* A serif display face for headings and the wordmark, to read like a quest log.
    System fonts only - no webfont request. */
 /* Rendered host markdown (quest text, the reward blurb): a restricted CommonMark
    subset (see services.render_markdown), so only these tags need styling. */
+.quest-md { overflow-wrap: anywhere; }
 .quest-md :first-child { margin-top: 0; }
 .quest-md :last-child { margin-bottom: 0; }
 .quest-md p { margin: 0.5em 0; }
