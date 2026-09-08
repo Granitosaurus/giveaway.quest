@@ -39,6 +39,7 @@ async def background_loop() -> None:
                 log.info("drew winner for %s", slug)
             for slug in await anyio.to_thread.run_sync(services.announce_due):
                 log.info("announced %s", slug)
+            await anyio.to_thread.run_sync(services.refresh_comment_threads)
         except Exception:  # noqa: BLE001 - never let the loop die
             log.exception("background loop failed")
         await asyncio.sleep(LOOP_INTERVAL_SECONDS)
