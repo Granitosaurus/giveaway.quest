@@ -46,11 +46,12 @@ the first time someone from it logs in and is cached in the database.
 The only scope requested from a user is `read:accounts` (who are you, how old
 is the account). The site never posts, follows or messages as a logged-in
 user. The login token is used once to read the profile, then revoked and
-discarded — it is never stored. Announcements (`gq announce`) and winner DMs
-go out from the site's own account, configured via `GQ_ANNOUNCE_INSTANCE` /
-`GQ_ANNOUNCE_TOKEN` (an app token on that account with the `write:statuses`
-scope). The database still holds giveaway rewards and per-instance OAuth client
-secrets; treat it (and backups) as secret.
+discarded — it is never stored. Announcements (`gq announce`), winner DMs and
+the on-page comment threads all go through the site's own account, configured
+via `GQ_ANNOUNCE_INSTANCE` / `GQ_ANNOUNCE_TOKEN` (an app token on that account
+with the `write:statuses` and `read:statuses` scopes). The database still holds
+giveaway rewards and per-instance OAuth client secrets; treat it (and backups)
+as secret.
 
 ## Configuration
 
@@ -64,7 +65,8 @@ Environment variables (a `.env` file in the working directory is loaded):
 | `GQ_DEBUG`      | off                     | `1` for tracebacks in responses                            |
 | `GQ_ADMINS`     | empty                   | Comma separated `user@instance` that can see hidden posts   |
 | `GQ_ANNOUNCE_INSTANCE` | empty            | Host of the site's own Mastodon account                    |
-| `GQ_ANNOUNCE_TOKEN`    | empty            | Its `write:statuses` token; enables `gq announce` + winner DMs |
+| `GQ_ANNOUNCE_TOKEN`    | empty            | Its `write:statuses`+`read:statuses` token; enables `gq announce`, winner DMs, comments |
+| `GQ_COMMENTS`   | `1`                     | Show announcement replies as comments; `0` disables        |
 | `GQ_RATE_LIMIT` | `10`                    | Per-IP POSTs per minute on `/auth/login` and `/new`; `0` disables |
 
 ## Admin CLI
@@ -95,9 +97,11 @@ See `NOTES.md` for design decisions, Litestar/NixOS gotchas and follow-ups.
   notifications) on top of `db.py` (plain sqlite, one connection per unit of
   work, WAL mode, online backups).
 - `mastodon.py` is the small httpx client. Endpoints used: `/api/v1/apps`,
-  `/oauth/token`, `/api/v1/accounts/verify_credentials` for login, and
+  `/oauth/token`, `/api/v1/accounts/verify_credentials` for login,
   `/api/v1/statuses` for posts made by the site's own account (announcements,
-  winner DMs). `share_url()` just builds a prefilled `share.joinmastodon.org` link.
+  winner DMs), and `/api/v1/statuses/:id/context` (as that account) to pull the
+  announcement's reply thread for the comments shown on each giveaway page.
+  `share_url()` just builds a prefilled `share.joinmastodon.org` link.
 - Giveaway ids are `coolname` slugs (`blue-jelly-cat` style).
 - Giveaway pages carry OpenGraph tags, so the Mastodon post shows a link card.
 

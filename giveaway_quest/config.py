@@ -28,7 +28,11 @@ class Settings:
     debug: bool = False
     admins: frozenset[str] = frozenset()
     announce_instance: str = ""  # host of the site's own Mastodon account
-    announce_token: str = ""  # its access token (needs write:statuses)
+    announce_token: str = ""  # its access token (needs write:statuses + read:statuses)
+    # Pull replies to the announcement post and show them as comments on the
+    # giveaway page. Needs an announcement account (GQ_ANNOUNCE_*) whose token
+    # also carries `read:statuses`. Set GQ_COMMENTS=0 to turn the feature off.
+    comments_enabled: bool = True
     # Per-client-IP cap on the expensive/abusable POSTs (login start, create),
     # requests per minute per path. 0 disables (tests).
     rate_limit: int = 10
@@ -76,6 +80,7 @@ def load_settings() -> Settings:
         admins=frozenset(a for a in admins if a),
         announce_instance=os.environ.get("GQ_ANNOUNCE_INSTANCE", "").strip().lower(),
         announce_token=os.environ.get("GQ_ANNOUNCE_TOKEN", "").strip(),
+        comments_enabled=_truthy(os.environ.get("GQ_COMMENTS", "1")),
         rate_limit=int(os.environ.get("GQ_RATE_LIMIT", "10") or 0),
         version=os.environ.get("GQ_VERSION", "").strip() or __version__,
     )
