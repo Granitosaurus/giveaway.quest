@@ -204,7 +204,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                 <div
                     class="text-xs uppercase tracking-wide text-base-content/60"
                 >
-                    Time left
+                    Random Winner in
                 </div>
                 <div
                     class="text-3xl font-mono font-bold tabular-nums"
@@ -289,9 +289,8 @@ g.owner_acct }}{% endblock %} {% block head %}
                 {% if not user %}
                 <h2 class="card-title text-base">Want in?</h2>
                 <p class="text-sm text-base-content/70">
-                    Log in with your Mastodon account to enter. We only read
-                    your profile; your account is your proof of being a real
-                    person.
+                    Winner chosen randomly. Log in with your Mastodon account to enter - 
+		    we only read your handle to prove you're not a bot.
                 </p>
                 <a href="/auth/login?next=/{{ g.slug }}" class="btn btn-primary"
                     >Log in with Mastodon</a
@@ -302,7 +301,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                     Entered
                     <time datetime="{{ entry.created_at }}" data-local
                         >{{ entry.created_at | human }}</time
-                    >. The winner is picked automatically at the deadline; if
+                    >. Random winner is picked automatically at the deadline; if
                     it's you, you'll get a DM and the reward shows up on this
                     page.
                 </p>
