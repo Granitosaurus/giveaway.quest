@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS giveaways (
     min_account_age_days INTEGER NOT NULL DEFAULT 0,
     listed               INTEGER NOT NULL DEFAULT 1, -- show on the front page / sitemap
     hidden               INTEGER NOT NULL DEFAULT 0, -- admin moderation
+    restart_if_unclaimed INTEGER NOT NULL DEFAULT 1, -- re-draw/reopen if the winner never claims
+    duration_hours       INTEGER,                    -- original run length, reused when reopening
     post_url             TEXT,
     post_id              TEXT,
     announce_attempted_at TEXT,               -- last auto-announce try (for retry spacing)
@@ -56,6 +58,9 @@ CREATE TABLE IF NOT EXISTS giveaways (
     drawn_at             TEXT,
     winner_id            INTEGER REFERENCES users(id) ON DELETE SET NULL,
     winner_notified_at   TEXT,
+    claim_deadline       TEXT,               -- winner must claim by here (drawn_at + CLAIM_WINDOW)
+    claimed_at           TEXT,               -- when the winner claimed and unlocked the reward
+    unclaimed_count      INTEGER NOT NULL DEFAULT 0, -- times re-drawn/reopened after a no-show
     reward_viewed_at     TEXT
 );
 CREATE INDEX IF NOT EXISTS giveaways_ends_at ON giveaways (ends_at);
@@ -104,7 +109,7 @@ def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 def _migrate(conn: sqlite3.Connection, version: int) -> None:
@@ -131,6 +136,26 @@ def _migrate(conn: sqlite3.Connection, version: int) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
         if "announce_attempted_at" not in columns:
             conn.execute("ALTER TABLE giveaways ADD COLUMN announce_attempted_at TEXT")
+    if version < 5:
+        # v5: the winner now has a fixed window to *claim* the reward before it is
+        # re-drawn (services.CLAIM_WINDOW). Add the columns, then grandfather every
+        # already-drawn giveaway as claimed so the deploy doesn't re-draw historic
+        # winners or hide rewards they can already see.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
+        adds = {
+            "restart_if_unclaimed": "INTEGER NOT NULL DEFAULT 1",
+            "duration_hours": "INTEGER",
+            "claim_deadline": "TEXT",
+            "claimed_at": "TEXT",
+            "unclaimed_count": "INTEGER NOT NULL DEFAULT 0",
+        }
+        for name, decl in adds.items():
+            if name not in columns:
+                conn.execute(f"ALTER TABLE giveaways ADD COLUMN {name} {decl}")
+        conn.execute(
+            "UPDATE giveaways SET claimed_at = COALESCE(reward_viewed_at, drawn_at)"
+            " WHERE drawn_at IS NOT NULL AND claimed_at IS NULL"
+        )
 
 
 def init_db(path: Path | None = None) -> None:

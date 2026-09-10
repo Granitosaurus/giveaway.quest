@@ -32,11 +32,14 @@ LOOP_INTERVAL_SECONDS = 30
 
 
 async def background_loop() -> None:
-    """Draw due winners and auto-announce listed giveaways. Runs for the life of the process."""
+    """Draw due winners, re-draw unclaimed rewards and auto-announce listed
+    giveaways. Runs for the life of the process."""
     while True:
         try:
             for slug in await anyio.to_thread.run_sync(services.draw_due):
                 log.info("drew winner for %s", slug)
+            for slug in await anyio.to_thread.run_sync(services.process_unclaimed):
+                log.info("re-drew unclaimed %s", slug)
             for slug in await anyio.to_thread.run_sync(services.announce_due):
                 log.info("announced %s", slug)
             await anyio.to_thread.run_sync(services.refresh_comment_threads)

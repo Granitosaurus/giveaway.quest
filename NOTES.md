@@ -51,6 +51,31 @@ the reward when they log in, and `reward_viewed_at` is set on first load. A
 Mastodon "direct" post is not private (both instances' admins can read it),
 which is why the reward itself never travels in the DM — only a link.
 
+**The winner claims the reward; unclaimed rewards are re-drawn.** After the
+draw the winner sees a *Claim reward* button, not the reward itself. `draw()`
+stamps `giveaways.claim_deadline` = `drawn_at + services.CLAIM_WINDOW` (2 days).
+`POST /{slug}/claim` (`services.claim_reward`) sets `claimed_at` and unlocks the
+Markdown; the claim UPDATE is guarded (`claimed_at IS NULL`, and
+`claim_deadline > now` *only* when `restart_if_unclaimed` is set) so it can't
+race the background job. `services.reward_claim_status(giveaway)` →
+`none`/`claimed`/`waiting`/`unclaimed` drives both the winner block and the host
+panel; it only returns `unclaimed` when `restart_if_unclaimed` is on — without
+the flag the reward stays claimable forever rather than hard-locking a winner
+who logs in late (that flag is the only thing the deadline gates).
+`services.process_unclaimed()` (background loop + `gq draw`) picks up
+`unclaimed` giveaways: it drops the no-show's entry, then **re-draws among the
+remaining entrants** (new `claim_deadline`, `winner_notified_at` reset so the
+replacement is DM'd) or, if nobody is left, **reopens** the giveaway
+(`winner_id`/`drawn_at`/`claim_deadline` cleared, `ends_at` pushed out by
+`duration_hours`, back to `open`). `unclaimed_count` counts the cycles; there is
+no cap — it keeps going while `restart_if_unclaimed = 1`. The no-show is *not*
+banned from re-entering if it reopens. The create/edit forms carry the
+*Restart if unclaimed* checkbox (`restart_if_unclaimed`, checked by default).
+Schema v5 added `restart_if_unclaimed`, `duration_hours`, `claim_deadline`,
+`claimed_at`, `unclaimed_count` and grandfathered every already-drawn giveaway
+as claimed (`claimed_at = COALESCE(reward_viewed_at, drawn_at)`) so the deploy
+neither re-draws historic winners nor hides rewards they can already see.
+
 **Posts from the site's own account never carry raw host text.**
 `services.neutralize_for_post` swaps `@`/`#` for their full-width look-alikes
 and strips URL schemes before a title lands in the winner DM or the default

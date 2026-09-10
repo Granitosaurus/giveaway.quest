@@ -61,6 +61,18 @@
             />
             <span>Show on the {{ site_name }} front page</span>
         </label>
+        <label class="label cursor-pointer items-start justify-start gap-3 whitespace-normal">
+            <input
+                type="checkbox"
+                name="restart_if_unclaimed"
+                class="checkbox mt-0.5"
+                {% if g.restart_if_unclaimed == 1 or g.restart_if_unclaimed == 'on' %}checked{% endif %}
+            />
+            <span
+                >Restart if the winner doesn't claim within 2 days (re-draw among
+                the other entrants, or reopen if nobody's left)</span
+            >
+        </label>
     </fieldset>
     <div class="flex gap-2">
         <button class="btn btn-primary">Save</button>

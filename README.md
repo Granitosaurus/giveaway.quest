@@ -4,8 +4,10 @@ Give away spare game keys and other digital codes to *real* people on the
 Fediverse. Hosts log in with Mastodon, write up the reward (a code, or Markdown
 with some flavor text), set a deadline and a little quest ("pet a cat");
 participants log in with Mastodon, agree to the conditions and enter; at the
-deadline the site picks a winner at random, DMs them from the giveaway.quest
-account and shows them the reward when they log in.
+deadline the site picks a winner at random and DMs them from the giveaway.quest
+account. The winner has two days to claim the reward (a button reveals it); if
+they don't, it's re-drawn among the other entrants, or the giveaway reopens if
+nobody is left. Turn that off per-giveaway with the "restart if unclaimed" box.
 Logging in only ever reads your profile &mdash; the site never posts as you.
 
 Stack: Python 3.13 · [Litestar](https://litestar.dev) · SQLite · Jinja ·
@@ -74,7 +76,7 @@ Environment variables (a `.env` file in the working directory is loaded):
 
 ```sh
 gq serve [--host 0.0.0.0] [--port 8000]   # run the server
-gq draw                                  # draw overdue giveaways (server does it every 30s too)
+gq draw                                  # draw overdue giveaways + re-draw unclaimed ones (server does it every 30s too)
 gq announce <slug> [--text "..."]        # post an announcement from the site's Mastodon account
 gq backup [--keep 48]                    # snapshot the sqlite db into data/backups/
 gq admin list [--all] [--hidden] [-q x]  # H=hidden L=listed D=drawn
@@ -91,7 +93,8 @@ See `NOTES.md` for design decisions, Litestar/NixOS gotchas and follow-ups.
 
 - `giveaway_quest/app.py` builds the Litestar app: cookie sessions, CSRF,
   Jinja, static files, and a background task that draws overdue giveaways,
-  auto-announces listed ones and keeps the comment caches warm.
+  re-draws unclaimed rewards, auto-announces listed ones and keeps the comment
+  caches warm.
 - `routes/auth.py` is the Mastodon OAuth flow (dynamic app registration per
   instance), `routes/pages.py` the HTML pages, `routes/meta.py` robots.txt and
   sitemap.xml.

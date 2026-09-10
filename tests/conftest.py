@@ -110,6 +110,14 @@ def csrf(client: TestClient, path: str = "/") -> str:
     return match.group(1) if match else client.cookies.get("csrftoken", "")
 
 
+def claim(client: TestClient, slug: str) -> None:
+    """Winner claims the reward (unlocks the code). Caller must be logged in as the winner."""
+    resp = client.post(
+        f"/{slug}/claim", data={"_csrf_token": csrf(client, f"/{slug}")}, follow_redirects=True
+    )
+    assert resp.status_code == 200, resp.text
+
+
 def create_giveaway(client: TestClient, **overrides) -> str:
     form = {
         "title": "Psychonauts 2",
@@ -118,6 +126,7 @@ def create_giveaway(client: TestClient, **overrides) -> str:
         "conditions": "US only",
         "hours": "48",
         "listed": "on",
+        "restart_if_unclaimed": "on",
         "_csrf_token": csrf(client, "/new"),
     }
     form.update(overrides)

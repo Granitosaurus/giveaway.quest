@@ -6,7 +6,7 @@ from datetime import timedelta
 import pytest
 
 from giveaway_quest import db, mastodon, services
-from tests.conftest import create_giveaway, csrf, login_as, make_user
+from tests.conftest import claim, create_giveaway, csrf, login_as, make_user
 
 _LD_JSON = re.compile(r'<script type="application/ld\+json">(.*?)</script>', re.S)
 
@@ -174,15 +174,23 @@ def test_create_announce_enter_draw_win(client, fake):
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
     assert g["winner_id"] == player["id"] and g["drawn_at"] and g["winner_notified_at"]
+    assert g["claim_deadline"] and not g["claimed_at"]
     dm = fake.posted[-1]
     assert dm["visibility"] == "direct" and "@player@other.social" in dm["text"]
+    assert "claim your reward" in dm["text"].lower()
     assert dm["instance"] == "botsrv.social"  # DM'd from the site account, not the host
 
-    # winner sees the code, and the view is recorded
+    # the winner sees only a claim button until they claim
+    page = client.get(f"/{slug}")
+    assert "Claim reward" in page.text and "AAAA-BBBB-CCCC" not in page.text
+    claim(client, slug)
+
+    # after claiming, the code is revealed and the view is recorded
     page = client.get(f"/{slug}")
     assert "That's you" in page.text and "AAAA-BBBB-CCCC" in page.text
     with db.connect() as conn:
-        assert services.get_giveaway(conn, slug)["reward_viewed_at"]
+        g = services.get_giveaway(conn, slug)
+    assert g["claimed_at"] and g["reward_viewed_at"]
 
     # somebody else does not see the code
     login_as(client, make_user("loser@other.social"))
@@ -352,6 +360,7 @@ def test_reward_is_rendered_markdown_for_the_winner(client, fake):
             (db.iso(db.now() - timedelta(minutes=1)), slug),
         )
     assert services.draw_due() == [slug]
+    claim(client, slug)
 
     page = client.get(f"/{slug}").text
     assert "<strong>A shiny sword!</strong>" in page
