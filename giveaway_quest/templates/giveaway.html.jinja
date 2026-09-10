@@ -178,7 +178,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                         >{{ g.drawn_at | human }}</time
                     >.
                 </p>
-                {% if is_winner %}
+                {% if is_winner and claim_status == 'claimed' %}
                 <div class="alert alert-success mt-2 flex-col items-start">
                     <div class="font-semibold">
                         That's you! Here is your reward:
@@ -188,6 +188,38 @@ g.owner_acct }}{% endblock %} {% block head %}
                     >
                         {{ g.reward | markdown | safe }}
                     </div>
+                </div>
+                {% elif is_winner and claim_status == 'waiting' %}
+                <div class="alert alert-success mt-2 flex-col items-start gap-2">
+                    <div class="font-semibold">
+                        🎉 That's you! Claim the reward to unlock it.
+                    </div>
+                    {% if g.claim_deadline %}
+                    <p class="text-sm">
+                        Claim by
+                        <time datetime="{{ g.claim_deadline }}" data-local
+                            >{{ g.claim_deadline | human }}</time
+                        >
+                        (<span data-countdown="{{ g.claim_deadline }}"
+                            >{{ g.claim_deadline | remaining }}</span
+                        >){% if g.restart_if_unclaimed %} or it's re-drawn for
+                        another entrant{% endif %}.
+                    </p>
+                    {% endif %}
+                    <form method="post" action="/{{ g.slug }}/claim">
+                        {{ csrf_input | safe }}
+                        <button class="btn btn-primary btn-sm">
+                            Claim reward
+                        </button>
+                    </form>
+                </div>
+                {% elif is_winner %}
+                <div class="alert alert-warning mt-2 flex-col items-start">
+                    <div class="font-semibold">You didn't claim in time.</div>
+                    <p class="text-sm">
+                        The claim window closed &mdash; the reward is being
+                        re-drawn for another entrant.
+                    </p>
                 </div>
                 {% endif %} {% else %}
                 <p class="text-base-content/70">
@@ -240,9 +272,24 @@ g.owner_acct }}{% endblock %} {% block head %}
                 <p class="text-sm">
                     {% if g.winner_notified_at %}The winner was DM'd from the {{
                     site_name }} account.{% else %}The winner wasn't DM'd
-                    &mdash; they'll see the reward when they log in here.{% endif
-                    %} {% if g.reward_viewed_at %}They have viewed the reward.{%
-                    else %}Not viewed yet.{% endif %}
+                    &mdash; they'll see it when they log in here.{% endif %} {% if
+                    claim_status == 'claimed' %}They claimed the reward{% if
+                    g.claimed_at %}
+                    <time datetime="{{ g.claimed_at }}" data-local
+                        >{{ g.claimed_at | human }}</time
+                    >{% endif %}.
+                    {% elif claim_status == 'waiting' %}Waiting for them to claim
+                    it{% if g.claim_deadline and g.restart_if_unclaimed %} by
+                    <time datetime="{{ g.claim_deadline }}" data-local
+                        >{{ g.claim_deadline | human }}</time
+                    >{% endif %}.
+                    {% else %}They didn't claim in time &mdash; it will be
+                    re-drawn shortly.{% endif %}
+                </p>
+                {% endif %} {% if g.unclaimed_count %}
+                <p class="text-sm text-base-content/60">
+                    Re-drawn {{ g.unclaimed_count }}&times; after a winner didn't
+                    claim.
                 </p>
                 {% endif %}
                 <p class="text-sm text-base-content/60">
@@ -304,8 +351,8 @@ g.owner_acct }}{% endblock %} {% block head %}
                     <time datetime="{{ entry.created_at }}" data-local
                         >{{ entry.created_at | human }}</time
                     >. Random winner is picked automatically at the deadline; if
-                    it's you, you'll get a DM and the reward shows up on this
-                    page.
+                    it's you, you'll get a DM and have 2 days to claim the reward
+                    here.
                 </p>
                 <form method="post" action="/{{ g.slug }}/withdraw">
                     {{ csrf_input | safe }}<button class="btn btn-sm btn-ghost">

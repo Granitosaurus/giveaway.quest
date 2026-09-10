@@ -70,7 +70,12 @@ def index(
 
 @get("/new", guards=[require_login], sync_to_thread=True)
 def new_form(request: Request, user: NamedDependency[dict]) -> Template:
-    return render(request, "new.html.jinja", user=user, form={"hours": 72, "listed": "on"})
+    return render(
+        request,
+        "new.html.jinja",
+        user=user,
+        form={"hours": 72, "listed": "on", "restart_if_unclaimed": "on"},
+    )
 
 
 @post("/new", guards=[require_login], sync_to_thread=True, middleware=write_rate_limit)
@@ -121,7 +126,8 @@ def giveaway_page(
             entry = services.get_entry(conn, giveaway["id"], user["id"])
         if not entry:
             problem = services.eligibility_problem(giveaway, user)
-    if is_winner:
+    claim_status = services.reward_claim_status(giveaway)
+    if is_winner and claim_status == "claimed":
         with db.connect() as conn:
             services.mark_reward_viewed(conn, giveaway)
     share_url = settings.url(f"/{giveaway['slug']}")
@@ -135,6 +141,7 @@ def giveaway_page(
         status=status,
         is_owner=is_owner,
         is_winner=is_winner,
+        claim_status=claim_status,
         entry=entry,
         problem=problem,
         share_url=share_url,
@@ -166,6 +173,18 @@ def withdraw(request: Request, slug: FromPath[str], user: NamedDependency[dict])
         with db.connect() as conn:
             services.withdraw(conn, giveaway, user)
         flash(request, "Your entry was removed.", "info")
+    except services.ValidationError as exc:
+        flash(request, str(exc), "error")
+    return Redirect(f"/{slug}")
+
+
+@post("/{slug:str}/claim", guards=[require_login], sync_to_thread=True)
+def claim(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Redirect:
+    giveaway = _load(slug, user)
+    try:
+        with db.connect() as conn:
+            services.claim_reward(conn, giveaway, user)
+        flash(request, "Reward claimed - here it is. 🎁", "success")
     except services.ValidationError as exc:
         flash(request, str(exc), "error")
     return Redirect(f"/{slug}")
@@ -228,6 +247,7 @@ router = Router(
         giveaway_page,
         enter,
         withdraw,
+        claim,
         edit_form,
         edit,
         delete,

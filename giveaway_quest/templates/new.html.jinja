@@ -110,6 +110,19 @@
                 />
                 <span>Show on the {{ site_name }} front page</span>
             </label>
+            <label class="label cursor-pointer items-start justify-start gap-3 whitespace-normal">
+                <input
+                    type="checkbox"
+                    name="restart_if_unclaimed"
+                    class="checkbox mt-0.5"
+                    {% if form.restart_if_unclaimed == 'on' %}checked{% endif %}
+                />
+                <span
+                    >Restart if unclaimed &mdash; if the winner doesn't claim the
+                    reward within 2 days, re-draw among the other entrants (or
+                    reopen the giveaway if nobody's left).</span
+                >
+            </label>
         </fieldset>
         <button class="btn btn-primary w-full btn-lg">Create giveaway</button>
     </div>

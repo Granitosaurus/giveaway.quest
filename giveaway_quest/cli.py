@@ -56,10 +56,15 @@ def init_db() -> None:
 
 @app.command
 def draw() -> None:
-    """Draw winners for all giveaways past their deadline (the server does this automatically)."""
+    """Draw winners for giveaways past their deadline and re-draw unclaimed rewards.
+
+    The server does both automatically every 30s.
+    """
     db.init_db()
     drawn = services.draw_due()
     print(f"drew {len(drawn)} giveaway(s): {', '.join(drawn) or '-'}")
+    redrawn = services.process_unclaimed()
+    print(f"re-drew {len(redrawn)} unclaimed: {', '.join(redrawn) or '-'}")
 
 
 @app.command
