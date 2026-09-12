@@ -551,6 +551,7 @@ def _auto_announce_text(giveaway: dict) -> str:
 
 
 def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, str]) -> dict:
+    reward = _clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward")
     conditions = _clean_text(data.get("conditions"), TEXT_MAX, name="Conditions")
     quest = _clean_text(data.get("quest"), TEXT_MAX, name="Quest")
     listed = data.get("listed") == "on"
@@ -570,10 +571,11 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
     )
     conn.execute(
         """UPDATE giveaways
-             SET conditions = ?, quest = ?, listed = ?, restart_if_unclaimed = ?,
+             SET reward = ?, conditions = ?, quest = ?, listed = ?, restart_if_unclaimed = ?,
                  ends_at = ?, post_url = ?, post_id = ?
            WHERE id = ?""",
         (
+            reward,
             conditions,
             quest,
             int(listed),
@@ -583,6 +585,24 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
             post_id,
             giveaway["id"],
         ),
+    )
+    return get_giveaway(conn, giveaway["slug"])
+
+
+def update_reward(conn: sqlite3.Connection, giveaway: dict, data: dict[str, str]) -> dict:
+    """Correct the reward text of an already-drawn giveaway.
+
+    The reward is the one field a host can still change after the draw: a typo in
+    a code or a dead link would otherwise leave the winner with nothing and no
+    fix (deleting and recreating loses the entrants and the winner). Everything
+    else stays frozen - changing the quest, the rules or the deadline after the
+    fact would rewrite the terms people entered under. The winner sees the
+    corrected text next time they load the page, claimed or not.
+    """
+    reward = _clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward")
+    conn.execute(
+        "UPDATE giveaways SET reward = ? WHERE id = ? AND drawn_at IS NOT NULL",
+        (reward, giveaway["id"]),
     )
     return get_giveaway(conn, giveaway["slug"])
 

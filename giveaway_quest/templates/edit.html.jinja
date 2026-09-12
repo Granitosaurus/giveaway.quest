@@ -2,15 +2,55 @@
 {% from "_forms.html.jinja" import md_editor %}
 {% block title %}Edit · {{ g.title }} · {{ site_name }}{% endblock %}
 {% block content %}
-<h1 class="text-3xl font-bold mb-1">Edit giveaway</h1>
+{% if g.drawn_at %}
+<h1 class="text-3xl font-bold mb-1">Edit the reward</h1>
 <p class="text-base-content/70 mb-6 break-words">
-    <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · the title and reward
-    can't be changed; delete and recreate instead.
+    <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · this giveaway has
+    been drawn, so the reward is the only thing still editable — fix a wrong
+    code or a dead link here.
 </p>
 
 <form method="post" action="/{{ g.slug }}/edit" class="max-w-2xl space-y-4">
     {{ csrf_input | safe }}
     <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
+        {{ md_editor(
+            "reward",
+            "The reward (kept secret — only the winner sees it)",
+            g.reward or "",
+            rows=3,
+            placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
+            hint="Only the winner ever sees this. They see the corrected text next time they open the page."
+        ) }}
+        {% if g.claimed_at %}
+        <p class="text-sm text-warning">
+            The winner has already claimed this reward and may have seen the old
+            text — let them know if you change it.
+        </p>
+        {% endif %}
+    </fieldset>
+    <div class="flex gap-2">
+        <button class="btn btn-primary">Save reward</button>
+        <a href="/{{ g.slug }}" class="btn btn-ghost">Cancel</a>
+    </div>
+</form>
+{% else %}
+<h1 class="text-3xl font-bold mb-1">Edit giveaway</h1>
+<p class="text-base-content/70 mb-6 break-words">
+    <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · the title can't be
+    changed; delete and recreate instead.
+</p>
+
+<form method="post" action="/{{ g.slug }}/edit" class="max-w-2xl space-y-4">
+    {{ csrf_input | safe }}
+    <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
+        {{ md_editor(
+            "reward",
+            "The reward (kept secret — only the winner sees it)",
+            g.reward or "",
+            rows=3,
+            placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
+            hint="Only the winner ever sees this."
+        ) }}
         {{ md_editor("quest", "Quest", g.quest or "", rows=2) }}
         <label class="floating-label">
             <span>Conditions</span>
@@ -79,4 +119,5 @@
         <a href="/{{ g.slug }}" class="btn btn-ghost">Cancel</a>
     </div>
 </form>
+{% endif %}
 {% endblock %}

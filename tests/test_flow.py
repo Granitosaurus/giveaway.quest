@@ -295,6 +295,7 @@ def test_edit_delete_and_unlisted(client):
     resp = client.post(
         f"/{slug}/edit",
         data={
+            "reward": "UPDATED-CODE",
             "quest": "hug a dog",
             "conditions": "",
             "hours": "1",
@@ -308,6 +309,7 @@ def test_edit_delete_and_unlisted(client):
         g = services.get_giveaway(conn, slug)
     assert db.parse_iso(g["ends_at"]) < db.now() + timedelta(hours=1, minutes=1)
     assert g["listed"] == 0  # checkbox not sent -> unlisted
+    assert g["reward"] == "UPDATED-CODE"  # reward is editable pre-draw too
     assert slug not in client.get("/").text
     assert slug not in client.get("/sitemap.xml").text
     assert client.get(f"/{slug}").status_code == 200  # still reachable by link
@@ -366,6 +368,67 @@ def test_reward_is_rendered_markdown_for_the_winner(client, fake):
     assert "<strong>A shiny sword!</strong>" in page
     assert "<code>AAAA-BBBB-CCCC</code>" in page
     assert "Here is your reward" in page
+
+
+def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
+    host = make_user("host@example.social")
+    login_as(client, host)
+    slug = create_giveaway(client, quest="pet a cat", reward="WRONG-CODE")
+
+    player = make_user("player@other.social")
+    login_as(client, player)
+    client.post(f"/{slug}/enter", data={"agree": "on", "_csrf_token": csrf(client)})
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE giveaways SET ends_at = ? WHERE slug = ?",
+            (db.iso(db.now() - timedelta(minutes=1)), slug),
+        )
+    assert services.draw_due() == [slug]
+    with db.connect() as conn:
+        before = services.get_giveaway(conn, slug)
+
+    login_as(client, host)
+    assert "Edit reward" in client.get(f"/{slug}").text  # host panel button, post-draw
+    assert "Edit the reward" in client.get(f"/{slug}/edit").text
+
+    # an empty reward is still rejected
+    resp = client.post(
+        f"/{slug}/edit",
+        data={"reward": "  ", "_csrf_token": csrf(client, f"/{slug}/edit")},
+    )
+    assert resp.status_code == 422 and "The reward" in resp.text
+
+    # the reward is corrected; everything else sent along is ignored
+    resp = client.post(
+        f"/{slug}/edit",
+        data={
+            "reward": "RIGHT-CODE",
+            "quest": "hug a dog",
+            "hours": "500",
+            "listed": "on",
+            "_csrf_token": csrf(client, f"/{slug}/edit"),
+        },
+        follow_redirects=True,
+    )
+    assert "Reward updated" in resp.text
+    with db.connect() as conn:
+        after = services.get_giveaway(conn, slug)
+    assert after["reward"] == "RIGHT-CODE"
+    for field in ("quest", "ends_at", "listed", "winner_id", "drawn_at", "claim_deadline"):
+        assert after[field] == before[field]
+
+    # the winner sees the corrected reward
+    login_as(client, player)
+    claim(client, slug)
+    assert "RIGHT-CODE" in client.get(f"/{slug}").text
+
+    # and nobody else can touch it
+    login_as(client, make_user("nosy@other.social"))
+    resp = client.post(
+        f"/{slug}/edit",
+        data={"reward": "STOLEN", "_csrf_token": csrf(client)},
+    )
+    assert resp.status_code == 403
 
 
 def test_md_preview_endpoint(client):
