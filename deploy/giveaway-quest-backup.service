@@ -4,4 +4,5 @@ Description=Hourly sqlite backup for giveaway.quest (podman-compose)
 [Service]
 Type=oneshot
 WorkingDirectory=%h/projects/giveaway-quest
+EnvironmentFile=%h/projects/giveaway-quest/.env
 ExecStart=/run/current-system/sw/bin/uv run invoke backup
