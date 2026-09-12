@@ -315,11 +315,15 @@ g.owner_acct }}{% endblock %} {% block head %}
                     {% endif %} Use <strong>Share</strong> below to post from
                     your own account.
                 </p>
-                {% if not g.drawn_at %}<a
-                    href="/{{ g.slug }}/edit"
-                    class="btn btn-sm btn-outline"
-                    >Edit</a
-                >{% endif %}
+                <a href="/{{ g.slug }}/edit" class="btn btn-sm btn-outline"
+                    >{% if g.drawn_at %}Edit reward{% else %}Edit{% endif %}</a
+                >
+                {% if g.drawn_at %}
+                <p class="text-sm text-base-content/60">
+                    Drawn giveaways are frozen apart from the reward &mdash; you
+                    can still correct a wrong code or a dead link.
+                </p>
+                {% endif %}
                 <form
                     method="post"
                     action="/{{ g.slug }}/delete"

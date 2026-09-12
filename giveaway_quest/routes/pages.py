@@ -203,12 +203,15 @@ def edit(
     request: Request, slug: FromPath[str], user: NamedDependency[dict], data: Form
 ) -> Template | Redirect:
     giveaway = _load(slug, user, for_owner=True)
-    if giveaway["drawn_at"]:
-        flash(request, "This giveaway has already been drawn and can't be edited.", "error")
-        return Redirect(f"/{slug}")
+    # Once drawn, the reward is the only field still editable (see
+    # services.update_reward) so the host can fix a bad code or link.
+    drawn = bool(giveaway["drawn_at"])
     try:
         with db.connect() as conn:
-            services.update_giveaway(conn, giveaway, data)
+            if drawn:
+                services.update_reward(conn, giveaway, data)
+            else:
+                services.update_giveaway(conn, giveaway, data)
     except services.ValidationError as exc:
         flash(request, str(exc), "error")
         return render(
@@ -219,7 +222,7 @@ def edit(
             g={**giveaway, **data},
             status=services.status_of(giveaway),
         )
-    flash(request, "Giveaway updated.", "success")
+    flash(request, "Reward updated." if drawn else "Giveaway updated.", "success")
     return Redirect(f"/{slug}")
 
 

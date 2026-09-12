@@ -175,6 +175,7 @@ def test_pasted_announcement_url_enables_comments(client, fake):
     client.post(
         f"/{slug}/edit",
         data={
+            "reward": "AAAA-BBBB-CCCC",
             "quest": "pet a cat",
             "conditions": "",
             "hours": "48",

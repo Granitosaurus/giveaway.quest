@@ -110,6 +110,22 @@ second layer). The create form asks for *title, quest, reward*, then puts
 Quest and reward both use the `md_editor` macro in `templates/_forms.html.jinja`
 (a Write/Preview textarea; the Preview tab POSTs to `/md-preview`).
 
+**`/{slug}/edit` is two forms in one, split on `drawn_at`.** Before the draw it
+edits reward/quest/conditions/duration/post URL/flags in one go
+(`services.update_giveaway`) — only the title is frozen; delete and recreate
+instead if that's wrong. After the draw the same URL serves a reward-only form
+(`services.update_reward`), because a typo'd code or a dead link would otherwise
+leave the winner with nothing and no fix: deleting and recreating throws away
+the entrants and the winner. Everything *except* the reward stays frozen once
+drawn — changing the quest, the rules or the deadline after the fact rewrites
+the terms people entered under, but the reward is host-owned content, not a
+term the entrants agreed to, so it's always editable, pre- or post-draw. The
+post-draw UPDATE is guarded with `drawn_at IS NOT NULL` so it can't race a
+reopen from `process_unclaimed` (a reopened giveaway clears `drawn_at` and is
+back on the full edit form). Editing is allowed whether or not the winner has
+claimed already — the form warns when `claimed_at` is set, since they may have
+copied the old text. The host panel's button reads *Edit reward* once drawn.
+
 **Announcement flow.** Logged-in users get *no* write access. Instead:
 
 - **Personal share.** The giveaway page shows a "Share on Mastodon" button,
