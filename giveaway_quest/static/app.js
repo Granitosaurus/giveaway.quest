@@ -75,6 +75,18 @@
     });
   });
 
+  document.querySelectorAll('[data-winner-count]').forEach(function (input) {
+    var slots = document.querySelectorAll('[data-winner-slot]');
+    var apply = function () {
+      var count = parseInt(input.value, 10) || 1;
+      slots.forEach(function (slot) {
+        slot.classList.toggle('hidden', parseInt(slot.getAttribute('data-winner-slot'), 10) > count);
+      });
+    };
+    input.addEventListener('input', apply);
+    apply();
+  });
+
   document.querySelectorAll('[data-md-editor]').forEach(function (root) {
     var input = root.querySelector('[data-md-input]');
     var preview = root.querySelector('[data-md-preview]');

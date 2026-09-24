@@ -135,8 +135,13 @@ g.owner_acct }}{% endblock %} {% block head %}
                         g.min_account_age_days %}, at least {{
                         g.min_account_age_days }} days old{% endif %}
                     </dd>
-                    <dt class="text-base-content/60">To Win</dt>
-                    <dd>Random</dd>
+                    <dt class="text-base-content/60">
+                        {{ 'Winners' if g.winner_count > 1 else 'To Win' }}
+                    </dt>
+                    <dd>
+                        {% if g.winner_count > 1 %}{{ g.winner_count }}, random{%
+                        else %}Random{% endif %}
+                    </dd>
                     <dt class="text-base-content/60">Entries</dt>
                     <dd>{{ g.entry_count }}</dd>
                     <dt class="text-base-content/60">
@@ -159,26 +164,27 @@ g.owner_acct }}{% endblock %} {% block head %}
             </div>
         </div>
 
-        {% if status == 'ended' %}
+        {% set any_winner = winners | selectattr('user_id') | list %}
+        {% if status == 'ended' or any_winner %}
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body">
-                <h2 class="card-title">🏆 Winner</h2>
-                {% if g.winner_id %}
+                <h2 class="card-title">
+                    🏆 {{ 'Winners' if g.winner_count > 1 else 'Winner' }}
+                </h2>
+                {% if any_winner %} {% for w in winners if w.user_id %}
+                <div{% if g.winner_count > 1 and not loop.first %} class="mt-4 pt-4 border-t border-base-300"{% endif %}>
+                {% set w_status = reward_claim_status(g, w) %}
                 <p>
-                    <a
-                        class="link"
-                        href="{{ g.winner_profile_url }}"
-                        rel="noopener"
-                        >{{ g.winner_name }}</a
+                    {% if g.winner_count > 1 %}<span class="text-base-content/60">#{{ w.seat }}</span>{% endif %}
+                    <a class="link" href="{{ w.user_profile_url }}" rel="noopener"
+                        >{{ w.user_name }}</a
                     >
-                    <span class="text-base-content/60"
-                        >@{{ g.winner_acct }}</span
-                    >, drawn
-                    <time datetime="{{ g.drawn_at }}" data-local
-                        >{{ g.drawn_at | human }}</time
+                    <span class="text-base-content/60">@{{ w.user_acct }}</span>, drawn
+                    <time datetime="{{ w.drawn_at }}" data-local
+                        >{{ w.drawn_at | human }}</time
                     >.
                 </p>
-                {% if is_winner and claim_status == 'claimed' %}
+                {% if my_seat and w.id == my_seat.id and w_status == 'claimed' %}
                 <div class="alert alert-success mt-2 flex-col items-start">
                     <div class="font-semibold">
                         That's you! Here is your reward:
@@ -186,22 +192,22 @@ g.owner_acct }}{% endblock %} {% block head %}
                     <div
                         class="quest-md select-all break-words bg-base-100 text-base-content px-3 py-2 rounded w-full"
                     >
-                        {{ g.reward | markdown | safe }}
+                        {{ w.reward | markdown | safe }}
                     </div>
                 </div>
-                {% elif is_winner and claim_status == 'waiting' %}
+                {% elif my_seat and w.id == my_seat.id and w_status == 'waiting' %}
                 <div class="alert alert-success mt-2 flex-col items-start gap-2">
                     <div class="font-semibold">
                         🎉 That's you! Claim the reward to unlock it.
                     </div>
-                    {% if g.claim_deadline %}
+                    {% if w.claim_deadline %}
                     <p class="text-sm">
                         Claim by
-                        <time datetime="{{ g.claim_deadline }}" data-local
-                            >{{ g.claim_deadline | human }}</time
+                        <time datetime="{{ w.claim_deadline }}" data-local
+                            >{{ w.claim_deadline | human }}</time
                         >
-                        (<span data-countdown="{{ g.claim_deadline }}"
-                            >{{ g.claim_deadline | remaining }}</span
+                        (<span data-countdown="{{ w.claim_deadline }}"
+                            >{{ w.claim_deadline | remaining }}</span
                         >){% if g.restart_if_unclaimed %} or it's re-drawn for
                         another entrant{% endif %}.
                     </p>
@@ -213,7 +219,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                         </button>
                     </form>
                 </div>
-                {% elif is_winner %}
+                {% elif my_seat and w.id == my_seat.id %}
                 <div class="alert alert-warning mt-2 flex-col items-start">
                     <div class="font-semibold">You didn't claim in time.</div>
                     <p class="text-sm">
@@ -221,9 +227,12 @@ g.owner_acct }}{% endblock %} {% block head %}
                         re-drawn for another entrant.
                     </p>
                 </div>
-                {% endif %} {% else %}
+                {% endif %}
+                </div>
+                {% endfor %} {% else %}
                 <p class="text-base-content/70">
-                    Nobody entered, so there is no winner.
+                    Nobody entered, so there {{ 'are no winners' if
+                    g.winner_count > 1 else 'is no winner' }}.
                 </p>
                 {% endif %}
             </div>
@@ -238,7 +247,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                 <div
                     class="text-xs uppercase tracking-wide text-base-content/60"
                 >
-                    Random Winner in
+                    {{ 'Random Winners in' if g.winner_count > 1 else 'Random Winner in' }}
                 </div>
                 <div
                     class="text-3xl font-mono font-bold tabular-nums"
@@ -258,40 +267,42 @@ g.owner_acct }}{% endblock %} {% block head %}
         <div class="card bg-base-100 shadow-sm">
             <div class="card-body gap-3">
                 <h2 class="card-title text-base">You're hosting this</h2>
+                {% for w in winners %}
                 <details class="collapse collapse-arrow bg-base-200">
                     <summary class="collapse-title text-sm font-medium">
-                        Show the reward
+                        Show reward{% if g.winner_count > 1 %} #{{ w.seat }}{% endif %}
                     </summary>
                     <div class="collapse-content">
                         <div class="quest-md select-all break-words">
-                            {{ g.reward | markdown | safe }}
+                            {{ w.reward | markdown | safe }}
                         </div>
                     </div>
                 </details>
-                {% if status == 'ended' and g.winner_id %}
+                {% if w.user_id %}
+                {% set w_status = reward_claim_status(g, w) %}
                 <p class="text-sm">
-                    {% if g.winner_notified_at %}The winner was DM'd from the {{
-                    site_name }} account.{% else %}The winner wasn't DM'd
-                    &mdash; they'll see it when they log in here.{% endif %} {% if
-                    claim_status == 'claimed' %}They claimed the reward{% if
-                    g.claimed_at %}
-                    <time datetime="{{ g.claimed_at }}" data-local
-                        >{{ g.claimed_at | human }}</time
+                    Seat {{ w.seat }}: @{{ w.user_acct }} &mdash;
+                    {% if w.winner_notified_at %}DM'd from the {{ site_name }}
+                    account.{% else %}not DM'd &mdash; they'll see it when they
+                    log in here.{% endif %} {% if w_status == 'claimed' %}They
+                    claimed the reward{% if w.claimed_at %}
+                    <time datetime="{{ w.claimed_at }}" data-local
+                        >{{ w.claimed_at | human }}</time
                     >{% endif %}.
-                    {% elif claim_status == 'waiting' %}Waiting for them to claim
-                    it{% if g.claim_deadline and g.restart_if_unclaimed %} by
-                    <time datetime="{{ g.claim_deadline }}" data-local
-                        >{{ g.claim_deadline | human }}</time
+                    {% elif w_status == 'waiting' %}Waiting for them to claim
+                    it{% if w.claim_deadline and g.restart_if_unclaimed %} by
+                    <time datetime="{{ w.claim_deadline }}" data-local
+                        >{{ w.claim_deadline | human }}</time
                     >{% endif %}.
                     {% else %}They didn't claim in time &mdash; it will be
                     re-drawn shortly.{% endif %}
                 </p>
-                {% endif %} {% if g.unclaimed_count %}
+                {% endif %} {% if w.unclaimed_count %}
                 <p class="text-sm text-base-content/60">
-                    Re-drawn {{ g.unclaimed_count }}&times; after a winner didn't
-                    claim.
+                    Seat {{ w.seat }} re-drawn {{ w.unclaimed_count }}&times;
+                    after a winner didn't claim.
                 </p>
-                {% endif %}
+                {% endif %} {% endfor %}
                 <p class="text-sm text-base-content/60">
                     {% if announce_state == 'announced' %}Announced from the {{
                     site_name }} account &mdash;
@@ -316,11 +327,11 @@ g.owner_acct }}{% endblock %} {% block head %}
                     your own account.
                 </p>
                 <a href="/{{ g.slug }}/edit" class="btn btn-sm btn-outline"
-                    >{% if g.drawn_at %}Edit reward{% else %}Edit{% endif %}</a
+                    >{% if g.drawn_at %}Edit rewards{% else %}Edit{% endif %}</a
                 >
                 {% if g.drawn_at %}
                 <p class="text-sm text-base-content/60">
-                    Drawn giveaways are frozen apart from the reward &mdash; you
+                    Drawn giveaways are frozen apart from the rewards &mdash; you
                     can still correct a wrong code or a dead link.
                 </p>
                 {% endif %}

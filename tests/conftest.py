@@ -121,7 +121,8 @@ def claim(client: TestClient, slug: str) -> None:
 def create_giveaway(client: TestClient, **overrides) -> str:
     form = {
         "title": "Psychonauts 2",
-        "reward": "AAAA-BBBB-CCCC",
+        "winner_count": "1",
+        "reward_1": "AAAA-BBBB-CCCC",
         "quest": "pet a cat",
         "conditions": "US only",
         "hours": "48",

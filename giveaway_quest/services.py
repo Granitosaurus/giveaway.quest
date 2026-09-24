@@ -25,6 +25,7 @@ REWARD_MAX = TEXT_MAX  # the reward is Markdown now, so it gets the same room as
 POST_MAX = 450  # leave room below Mastodon's default 500 char limit
 PAGE_SIZE = 12
 MAX_DURATION_HOURS = 24 * 90
+MAX_WINNERS = 10  # seats/rewards per giveaway; site is low-volume, bump if ever needed
 
 # How long the winner has to claim the reward (click "Claim reward" to unlock the
 # code) before it is re-drawn among the remaining entrants, or the giveaway is
@@ -352,11 +353,9 @@ GIVEAWAY_SELECT = """
 SELECT g.*,
        u.acct AS owner_acct, u.display_name AS owner_name, u.avatar_url AS owner_avatar,
        u.profile_url AS owner_profile_url,
-       (SELECT COUNT(*) FROM entries e WHERE e.giveaway_id = g.id) AS entry_count,
-       w.acct AS winner_acct, w.display_name AS winner_name, w.profile_url AS winner_profile_url
+       (SELECT COUNT(*) FROM entries e WHERE e.giveaway_id = g.id) AS entry_count
 FROM giveaways g
 JOIN users u ON u.id = g.owner_id
-LEFT JOIN users w ON w.id = g.winner_id
 """
 
 
@@ -389,10 +388,24 @@ def parse_hours(raw: str | None, *, name: str = "Duration") -> int:
     return hours
 
 
+def parse_rewards(data: dict[str, str]) -> list[str]:
+    """Read `winner_count` and its `reward_1..reward_N` fields off a posted form."""
+    try:
+        count = int(data.get("winner_count") or 1)
+    except ValueError as exc:
+        raise ValidationError("Number of winners must be a whole number.") from exc
+    if count < 1 or count > MAX_WINNERS:
+        raise ValidationError(f"Number of winners must be between 1 and {MAX_WINNERS}.")
+    return [
+        _clean_text(data.get(f"reward_{i}"), REWARD_MAX, required=True, name=f"Reward {i}")
+        for i in range(1, count + 1)
+    ]
+
+
 @dataclass(slots=True)
 class GiveawayForm:
     title: str
-    reward: str
+    rewards: list[str]
     conditions: str
     quest: str
     allowed_instances: str
@@ -416,7 +429,7 @@ class GiveawayForm:
             raise ValidationError(f"Allowed servers: {exc}") from exc
         return cls(
             title=title,
-            reward=_clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward"),
+            rewards=parse_rewards(data),
             conditions=_clean_text(data.get("conditions"), TEXT_MAX, name="Conditions"),
             quest=_clean_text(data.get("quest"), TEXT_MAX, name="Quest"),
             allowed_instances=allowed,
@@ -446,19 +459,26 @@ def neutralize_for_post(text: str) -> str:
     return text.replace("@", "＠").replace("#", "＃")
 
 
+def _insert_seats(conn: sqlite3.Connection, giveaway_id: int, rewards: list[str]) -> None:
+    conn.executemany(
+        "INSERT INTO winners (giveaway_id, seat, reward) VALUES (?, ?, ?)",
+        [(giveaway_id, seat, reward) for seat, reward in enumerate(rewards, start=1)],
+    )
+
+
 def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -> dict:
     now = db.now()
     slug = new_slug(conn)
-    conn.execute(
-        """INSERT INTO giveaways (slug, owner_id, title, reward, conditions, quest,
+    cur = conn.execute(
+        """INSERT INTO giveaways (slug, owner_id, title, conditions, quest,
                                   allowed_instances, min_account_age_days, listed,
-                                  restart_if_unclaimed, duration_hours, created_at, ends_at)
+                                  restart_if_unclaimed, duration_hours, winner_count,
+                                  created_at, ends_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             slug,
             owner["id"],
             form.title,
-            form.reward,
             form.conditions,
             form.quest,
             form.allowed_instances,
@@ -466,10 +486,12 @@ def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -
             int(form.listed),
             int(form.restart_if_unclaimed),
             form.hours,
+            len(form.rewards),
             db.iso(now),
             db.iso(now + timedelta(hours=form.hours)),
         ),
     )
+    _insert_seats(conn, cur.lastrowid, form.rewards)
     return get_giveaway(conn, slug)
 
 
@@ -551,7 +573,7 @@ def _auto_announce_text(giveaway: dict) -> str:
 
 
 def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, str]) -> dict:
-    reward = _clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward")
+    rewards = parse_rewards(data)
     conditions = _clean_text(data.get("conditions"), TEXT_MAX, name="Conditions")
     quest = _clean_text(data.get("quest"), TEXT_MAX, name="Quest")
     listed = data.get("listed") == "on"
@@ -571,11 +593,10 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
     )
     conn.execute(
         """UPDATE giveaways
-             SET reward = ?, conditions = ?, quest = ?, listed = ?, restart_if_unclaimed = ?,
-                 ends_at = ?, post_url = ?, post_id = ?
+             SET conditions = ?, quest = ?, listed = ?, restart_if_unclaimed = ?,
+                 ends_at = ?, post_url = ?, post_id = ?, winner_count = ?
            WHERE id = ?""",
         (
-            reward,
             conditions,
             quest,
             int(listed),
@@ -583,27 +604,34 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
             ends_at,
             post_url or None,
             post_id,
+            len(rewards),
             giveaway["id"],
         ),
     )
+    # Safe to replace wholesale: this only runs pre-draw (see routes/pages.py),
+    # so no seat can have a user_id yet.
+    conn.execute("DELETE FROM winners WHERE giveaway_id = ?", (giveaway["id"],))
+    _insert_seats(conn, giveaway["id"], rewards)
     return get_giveaway(conn, giveaway["slug"])
 
 
 def update_reward(conn: sqlite3.Connection, giveaway: dict, data: dict[str, str]) -> dict:
-    """Correct the reward text of an already-drawn giveaway.
+    """Correct one or more seats' reward text on an already-drawn giveaway.
 
-    The reward is the one field a host can still change after the draw: a typo in
-    a code or a dead link would otherwise leave the winner with nothing and no
-    fix (deleting and recreating loses the entrants and the winner). Everything
+    The reward is the one thing a host can still change after the draw: a typo in
+    a code or a dead link would otherwise leave a winner with nothing and no fix
+    (deleting and recreating loses the entrants and the other winners). Everything
     else stays frozen - changing the quest, the rules or the deadline after the
-    fact would rewrite the terms people entered under. The winner sees the
-    corrected text next time they load the page, claimed or not.
+    fact would rewrite the terms people entered under. Seat count is fixed once
+    drawn. Each winner sees their corrected text next time they load the page,
+    claimed or not.
     """
-    reward = _clean_text(data.get("reward"), REWARD_MAX, required=True, name="The reward")
-    conn.execute(
-        "UPDATE giveaways SET reward = ? WHERE id = ? AND drawn_at IS NOT NULL",
-        (reward, giveaway["id"]),
-    )
+    for winner in get_winners(conn, giveaway["id"]):
+        field = f"reward_{winner['id']}"
+        if field not in data:
+            continue
+        reward = _clean_text(data[field], REWARD_MAX, required=True, name="The reward")
+        conn.execute("UPDATE winners SET reward = ? WHERE id = ?", (reward, winner["id"]))
     return get_giveaway(conn, giveaway["slug"])
 
 
@@ -613,6 +641,29 @@ def delete_giveaway(conn: sqlite3.Connection, giveaway_id: int) -> None:
 
 def get_giveaway(conn: sqlite3.Connection, slug: str) -> dict | None:
     return conn.execute(GIVEAWAY_SELECT + " WHERE g.slug = ?", (slug,)).fetchone()
+
+
+WINNER_SELECT = """
+SELECT w.*,
+       u.acct AS user_acct, u.display_name AS user_name,
+       u.avatar_url AS user_avatar, u.profile_url AS user_profile_url
+FROM winners w
+LEFT JOIN users u ON u.id = w.user_id
+"""
+
+
+def get_winners(conn: sqlite3.Connection, giveaway_id: int) -> list[dict]:
+    """All seats for a giveaway, in display order."""
+    return conn.execute(
+        WINNER_SELECT + " WHERE w.giveaway_id = ? ORDER BY w.seat", (giveaway_id,)
+    ).fetchall()
+
+
+def get_winner_for_user(conn: sqlite3.Connection, giveaway_id: int, user_id: int) -> dict | None:
+    """The seat this user holds in this giveaway, if any."""
+    return conn.execute(
+        WINNER_SELECT + " WHERE w.giveaway_id = ? AND w.user_id = ?", (giveaway_id, user_id)
+    ).fetchone()
 
 
 def status_of(giveaway: dict) -> str:
@@ -747,26 +798,52 @@ def withdraw(conn: sqlite3.Connection, giveaway: dict, user: dict) -> None:
 # --------------------------------------------------------------------------- drawing
 
 
-def draw(conn: sqlite3.Connection, giveaway: dict) -> dict | None:
-    """Pick a winner uniformly at random with a CSPRNG. Returns the winning user or None."""
-    entrants = conn.execute(
-        "SELECT u.* FROM entries e JOIN users u ON u.id = e.user_id"
-        " WHERE e.giveaway_id = ? AND u.banned = 0 ORDER BY e.id",
-        (giveaway["id"],),
-    ).fetchall()
-    winner = secrets.choice(entrants) if entrants else None
+def _eligible_entrants(conn: sqlite3.Connection, giveaway_id: int) -> list[dict]:
+    """This giveaway's non-banned entrants who don't already hold a seat in it."""
+    held = {
+        row["user_id"]
+        for row in conn.execute(
+            "SELECT user_id FROM winners WHERE giveaway_id = ? AND user_id IS NOT NULL",
+            (giveaway_id,),
+        ).fetchall()
+    }
+    return [
+        row
+        for row in conn.execute(
+            "SELECT u.* FROM entries e JOIN users u ON u.id = e.user_id"
+            " WHERE e.giveaway_id = ? AND u.banned = 0 ORDER BY e.id",
+            (giveaway_id,),
+        ).fetchall()
+        if row["id"] not in held
+    ]
+
+
+def draw(conn: sqlite3.Connection, giveaway: dict) -> list[dict]:
+    """Fill every still-open seat with a distinct entrant, CSPRNG, no repeats within
+    this giveaway. Leftover seats stay winnerless if there aren't enough entrants.
+    Returns the seats newly filled.
+    """
     now = db.now()
     conn.execute(
-        """UPDATE giveaways SET drawn_at = ?, winner_id = ?, claim_deadline = ?
-           WHERE id = ? AND drawn_at IS NULL""",
-        (
-            db.iso(now),
-            winner["id"] if winner else None,
-            db.iso(now + CLAIM_WINDOW) if winner else None,
-            giveaway["id"],
-        ),
+        "UPDATE giveaways SET drawn_at = ? WHERE id = ? AND drawn_at IS NULL",
+        (db.iso(now), giveaway["id"]),
     )
-    return winner
+    open_seats = conn.execute(
+        "SELECT * FROM winners WHERE giveaway_id = ? AND user_id IS NULL ORDER BY seat",
+        (giveaway["id"],),
+    ).fetchall()
+    if not open_seats:
+        return []
+    entrants = _eligible_entrants(conn, giveaway["id"])
+    chosen = secrets.SystemRandom().sample(entrants, k=min(len(entrants), len(open_seats)))
+    filled_ids = []
+    for seat, winner in zip(open_seats, chosen, strict=False):
+        conn.execute(
+            "UPDATE winners SET user_id = ?, drawn_at = ?, claim_deadline = ? WHERE id = ?",
+            (winner["id"], db.iso(now), db.iso(now + CLAIM_WINDOW), seat["id"]),
+        )
+        filled_ids.append(seat["id"])
+    return [w for w in get_winners(conn, giveaway["id"]) if w["id"] in filled_ids]
 
 
 def due_giveaways(conn: sqlite3.Connection) -> list[dict]:
@@ -776,20 +853,22 @@ def due_giveaways(conn: sqlite3.Connection) -> list[dict]:
     ).fetchall()
 
 
-def notify_winner(conn: sqlite3.Connection, giveaway: dict) -> bool:
-    """DM the winner from the site's own account. Best effort; the site is the source of truth."""
-    if not giveaway["winner_id"] or giveaway["winner_notified_at"]:
+def notify_winner(conn: sqlite3.Connection, giveaway: dict, winner: dict) -> bool:
+    """DM one seat's winner from the site's own account.
+
+    Best effort; the site is the source of truth. `winner` is a `winners` row
+    (joined to its user via `user_acct` etc., see `WINNER_SELECT`).
+    """
+    if not winner["user_id"] or winner["winner_notified_at"]:
         return False
     if not settings.announce_enabled:
-        return False
-    winner = get_user(conn, giveaway["winner_id"])
-    if not winner:
         return False
     url = settings.url(f"/{giveaway['slug']}")
     title = neutralize_for_post(giveaway["title"])
     days = CLAIM_WINDOW.days
+    prize = f"1 of {giveaway['winner_count']} prizes" if giveaway["winner_count"] > 1 else "it"
     text = (
-        f'@{winner["acct"]} you won "{title}" on giveaway.quest! 🎉\n'
+        f'@{winner["user_acct"]} you won {prize} in "{title}" on giveaway.quest! 🎉\n'
         f"Log in within {days} days to claim your reward: {url}"
     )
     try:
@@ -799,8 +878,8 @@ def notify_winner(conn: sqlite3.Connection, giveaway: dict) -> bool:
     except mastodon.MastodonError:
         return False
     conn.execute(
-        "UPDATE giveaways SET winner_notified_at = ? WHERE id = ?",
-        (db.iso(db.now()), giveaway["id"]),
+        "UPDATE winners SET winner_notified_at = ? WHERE id = ?",
+        (db.iso(db.now()), winner["id"]),
     )
     return True
 
@@ -812,18 +891,18 @@ def draw_due() -> list[str]:
     drawn: list[str] = []
     for giveaway in due:
         with db.connect() as conn:
-            draw(conn, giveaway)
-            fresh = get_giveaway(conn, giveaway["slug"])
-            notify_winner(conn, fresh)
+            filled = draw(conn, giveaway)
+            for winner in filled:
+                notify_winner(conn, giveaway, winner)
         drawn.append(giveaway["slug"])
     return drawn
 
 
-def mark_reward_viewed(conn: sqlite3.Connection, giveaway: dict) -> None:
-    if not giveaway["reward_viewed_at"]:
+def mark_reward_viewed(conn: sqlite3.Connection, winner: dict) -> None:
+    if not winner["reward_viewed_at"]:
         conn.execute(
-            "UPDATE giveaways SET reward_viewed_at = ? WHERE id = ?",
-            (db.iso(db.now()), giveaway["id"]),
+            "UPDATE winners SET reward_viewed_at = ? WHERE id = ?",
+            (db.iso(db.now()), winner["id"]),
         )
 
 
@@ -835,38 +914,39 @@ def mark_reward_viewed(conn: sqlite3.Connection, giveaway: dict) -> None:
 # reopening the giveaway for fresh entries only when nobody remains.
 
 
-def reward_claim_status(giveaway: dict) -> str:
-    """Where the reward stands: ``none`` (no winner), ``claimed``, ``waiting``
-    (winner drawn, still claimable) or ``unclaimed`` (window elapsed).
+def reward_claim_status(giveaway: dict, winner: dict | None) -> str:
+    """Where one seat's reward stands: ``none`` (no winner drawn for it), ``claimed``,
+    ``waiting`` (winner drawn, still claimable) or ``unclaimed`` (window elapsed).
 
     ``unclaimed`` only happens with ``restart_if_unclaimed`` set - that is the
     signal `process_unclaimed` acts on. Without it the reward stays claimable
     indefinitely rather than hard-locking a winner who logs in late.
     """
-    if not giveaway["winner_id"]:
+    if not winner or not winner["user_id"]:
         return "none"
-    if giveaway["claimed_at"]:
+    if winner["claimed_at"]:
         return "claimed"
     if not giveaway["restart_if_unclaimed"]:
         return "waiting"
-    deadline = db.parse_iso(giveaway["claim_deadline"])
+    deadline = db.parse_iso(winner["claim_deadline"])
     if deadline and deadline > db.now():
         return "waiting"
     return "unclaimed"
 
 
 def claim_reward(conn: sqlite3.Connection, giveaway: dict, user: dict) -> dict:
-    """Let the winner unlock the reward. Raises ValidationError if they can't."""
-    if giveaway["winner_id"] != user["id"]:
-        raise ValidationError("You are not the winner of this giveaway.")
-    if giveaway["claimed_at"]:
+    """Let the caller unlock their seat's reward. Raises ValidationError if they can't."""
+    winner = get_winner_for_user(conn, giveaway["id"], user["id"])
+    if not winner:
+        raise ValidationError("You are not a winner of this giveaway.")
+    if winner["claimed_at"]:
         raise ValidationError("You have already claimed this reward.")
     deadline_guard = "" if not giveaway["restart_if_unclaimed"] else " AND claim_deadline > :now"
     cur = conn.execute(
-        f"""UPDATE giveaways SET claimed_at = :now
-            WHERE id = :id AND winner_id = :uid AND claimed_at IS NULL
+        f"""UPDATE winners SET claimed_at = :now
+            WHERE id = :id AND user_id = :uid AND claimed_at IS NULL
                   AND drawn_at IS NOT NULL{deadline_guard}""",
-        {"now": db.iso(db.now()), "id": giveaway["id"], "uid": user["id"]},
+        {"now": db.iso(db.now()), "id": winner["id"], "uid": user["id"]},
     )
     if cur.rowcount == 0:
         raise ValidationError("The claim window has closed - the reward is being re-drawn.")
@@ -884,66 +964,76 @@ def _reopen_hours(giveaway: dict) -> int:
     return 72
 
 
-def _restart_unclaimed(conn: sqlite3.Connection, giveaway: dict) -> str:
-    """Drop the no-show winner's entry, then re-draw among the rest or reopen.
+def _get_giveaway_by_id(conn: sqlite3.Connection, giveaway_id: int) -> dict | None:
+    return conn.execute(GIVEAWAY_SELECT + " WHERE g.id = ?", (giveaway_id,)).fetchone()
 
-    Returns ``"redrawn"`` or ``"reopened"``.
+
+def _get_winner(conn: sqlite3.Connection, winner_id: int) -> dict | None:
+    return conn.execute(WINNER_SELECT + " WHERE w.id = ?", (winner_id,)).fetchone()
+
+
+def _restart_unclaimed(conn: sqlite3.Connection, giveaway: dict, winner: dict) -> str:
+    """Drop the no-show's entry, then re-draw this seat among the rest, or reopen
+    the whole giveaway for fresh entries if nobody eligible is left.
+
+    Returns ``"redrawn"`` or ``"reopened"``. Other seats in the same giveaway
+    (already claimed or still waiting) are untouched either way.
     """
     conn.execute(
         "DELETE FROM entries WHERE giveaway_id = ? AND user_id = ?",
-        (giveaway["id"], giveaway["winner_id"]),
+        (giveaway["id"], winner["user_id"]),
     )
-    entrants = conn.execute(
-        "SELECT u.* FROM entries e JOIN users u ON u.id = e.user_id"
-        " WHERE e.giveaway_id = ? AND u.banned = 0 ORDER BY e.id",
-        (giveaway["id"],),
-    ).fetchall()
-    now = db.now()
-    if entrants:
-        winner = secrets.choice(entrants)
-        conn.execute(
-            """UPDATE giveaways
-                 SET winner_id = ?, drawn_at = ?, claim_deadline = ?,
-                     winner_notified_at = NULL, claimed_at = NULL,
-                     unclaimed_count = unclaimed_count + 1
-               WHERE id = ?""",
-            (winner["id"], db.iso(now), db.iso(now + CLAIM_WINDOW), giveaway["id"]),
-        )
-        notify_winner(conn, get_giveaway(conn, giveaway["slug"]))
-        return "redrawn"
     conn.execute(
-        """UPDATE giveaways
-             SET winner_id = NULL, drawn_at = NULL, claim_deadline = NULL,
-                 winner_notified_at = NULL, claimed_at = NULL, ends_at = ?,
+        """UPDATE winners
+             SET user_id = NULL, drawn_at = NULL, claim_deadline = NULL,
+                 winner_notified_at = NULL, claimed_at = NULL,
                  unclaimed_count = unclaimed_count + 1
            WHERE id = ?""",
+        (winner["id"],),
+    )
+    entrants = _eligible_entrants(conn, giveaway["id"])
+    now = db.now()
+    if entrants:
+        replacement = secrets.choice(entrants)
+        conn.execute(
+            "UPDATE winners SET user_id = ?, drawn_at = ?, claim_deadline = ? WHERE id = ?",
+            (replacement["id"], db.iso(now), db.iso(now + CLAIM_WINDOW), winner["id"]),
+        )
+        notify_winner(conn, giveaway, _get_winner(conn, winner["id"]))
+        return "redrawn"
+    conn.execute(
+        "UPDATE giveaways SET drawn_at = NULL, ends_at = ? WHERE id = ?",
         (db.iso(now + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
     )
     return "reopened"
 
 
 def process_unclaimed() -> list[str]:
-    """Re-draw or reopen giveaways whose winner let the claim window lapse.
+    """Re-draw or reopen seats whose winner let the claim window lapse.
 
-    Runs from the background loop (and `gq draw`). Each giveaway in its own
-    transaction. Returns the slugs handled.
+    Runs from the background loop (and `gq draw`). Each seat in its own
+    transaction. Returns the slug of the giveaway for every seat handled (a
+    slug can appear more than once if several of its seats needed handling in
+    the same pass).
     """
     with db.connect() as conn:
         due = conn.execute(
-            GIVEAWAY_SELECT
-            + """ WHERE g.drawn_at IS NOT NULL AND g.winner_id IS NOT NULL
-                    AND g.claimed_at IS NULL AND g.restart_if_unclaimed = 1
-                    AND g.claim_deadline IS NOT NULL AND g.claim_deadline <= ?
-                  ORDER BY g.claim_deadline""",
+            """SELECT w.id AS winner_id, w.giveaway_id
+               FROM winners w JOIN giveaways g ON g.id = w.giveaway_id
+               WHERE w.user_id IS NOT NULL AND w.claimed_at IS NULL
+                     AND g.restart_if_unclaimed = 1
+                     AND w.claim_deadline IS NOT NULL AND w.claim_deadline <= ?
+               ORDER BY w.claim_deadline""",
             (db.iso(db.now()),),
         ).fetchall()
     handled: list[str] = []
-    for giveaway in due:
+    for row in due:
         with db.connect() as conn:
-            fresh = get_giveaway(conn, giveaway["slug"])
-            if reward_claim_status(fresh) != "unclaimed":
+            giveaway = _get_giveaway_by_id(conn, row["giveaway_id"])
+            winner = _get_winner(conn, row["winner_id"])
+            if not giveaway or not winner or reward_claim_status(giveaway, winner) != "unclaimed":
                 continue  # claimed (or already handled) between the SELECT and here
-            outcome = _restart_unclaimed(conn, fresh)
-        log.info("%s unclaimed: %s", giveaway["slug"], outcome)
+            outcome = _restart_unclaimed(conn, giveaway, winner)
+        log.info("%s seat %s unclaimed: %s", giveaway["slug"], winner["seat"], outcome)
         handled.append(giveaway["slug"])
     return handled

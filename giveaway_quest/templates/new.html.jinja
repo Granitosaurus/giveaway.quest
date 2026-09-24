@@ -1,10 +1,10 @@
 {% extends "base.html.jinja" %}
-{% from "_forms.html.jinja" import md_editor %}
+{% from "_forms.html.jinja" import md_editor, winner_fields %}
 {% block title %}New giveaway · {{ site_name }}{% endblock %}
 {% block content %}
 <h1 class="text-3xl font-bold mb-2">New giveaway</h1>
 <p class="text-base-content/70 mb-6">
-    The reward stays secret on {{ site_name }} and is shown only to the winner.
+    Rewards stay secret on {{ site_name }} and are shown only to their winner.
     Everything else is public.
 </p>
 
@@ -33,14 +33,7 @@
                 placeholder="Pet a cat. Take a 20 minute walk. Draw a duck."
             ) }}
 
-            {{ md_editor(
-                "reward",
-                "The reward (kept secret — only the winner sees it)",
-                form.reward or "",
-                rows=3,
-                placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
-                hint="Paste a plain code, or use Markdown to wrap it in flavor text, links and instructions. Only the winner ever sees this."
-            ) }}
+            {{ winner_fields(rewards=rewards, count=count, max_winners=max_winners) }}
         </fieldset>
 
         <p class="text-sm text-base-content/60">
@@ -78,7 +71,7 @@
                 />
             </label>
             <p class="label whitespace-normal">
-                24 = one day, 72 = three days, 168 = a week. The winner is drawn
+                24 = one day, 72 = three days, 168 = a week. Winners are drawn
                 automatically.
             </p>
             <label class="floating-label">
@@ -118,9 +111,10 @@
                     {% if form.restart_if_unclaimed == 'on' %}checked{% endif %}
                 />
                 <span
-                    >Restart if unclaimed &mdash; if the winner doesn't claim the
-                    reward within 2 days, re-draw among the other entrants (or
-                    reopen the giveaway if nobody's left).</span
+                    >Restart if unclaimed &mdash; if a winner doesn't claim
+                    their reward within 2 days, re-draw that seat among the
+                    other entrants (or reopen the giveaway if nobody's
+                    left).</span
                 >
             </label>
         </fieldset>

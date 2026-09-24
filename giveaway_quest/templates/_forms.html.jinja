@@ -40,3 +40,40 @@
     {% endif %}
 </div>
 {% endmacro %}
+
+{# Number-of-winners field plus that many reward md_editors, used by both the
+   create form and the pre-draw edit form. `rewards` is the current list of
+   reward texts (index 0 = seat 1); `count` is the current winner_count.
+   All `max_winners` boxes are always rendered so the form degrades without
+   JS - [data-winner-count] in app.js hides the ones past the chosen count. #}
+{% macro winner_fields(rewards=[], count=1, max_winners=10) %}
+<label class="floating-label max-w-2xs">
+    <span>Number of winners</span>
+    <input
+        name="winner_count"
+        type="number"
+        class="input w-full"
+        min="1"
+        max="{{ max_winners }}"
+        data-winner-count
+        value="{{ count }}"
+    />
+</label>
+<p class="label whitespace-normal text-xs text-base-content/60">
+    One random winner per seat, no repeats. Fill in a reward for each one
+    below (without JavaScript, all {{ max_winners }} boxes show — just leave
+    the extra ones blank).
+</p>
+{% for i in range(1, max_winners + 1) %}
+<div data-winner-slot="{{ i }}"{% if i > count %} class="hidden"{% endif %}>
+    {{ md_editor(
+        "reward_" ~ i,
+        "Reward #" ~ i,
+        rewards[i - 1] if i <= rewards | length else "",
+        rows=3,
+        placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
+        hint="Paste a plain code, or use Markdown to wrap it in flavor text, links and instructions. Only that seat's winner ever sees this." if i == 1 else ""
+    ) }}
+</div>
+{% endfor %}
+{% endmacro %}

@@ -22,29 +22,55 @@ def _ld_objects(html: str) -> dict:
 
 
 def test_schema_v1_to_v2_renames_secret_to_reward(tmp_path):
+    # Hand-build a pre-v2 `giveaways` table (still named `secret`) so init_db()
+    # has to run every migration up to the current version, v2's rename included.
     path = tmp_path / "old.sqlite3"
-    db.init_db(path)
     conn = sqlite3.connect(path)
     conn.executescript(
-        "ALTER TABLE giveaways RENAME COLUMN reward TO secret;"
-        "ALTER TABLE giveaways RENAME COLUMN reward_viewed_at TO secret_viewed_at;"
-        "PRAGMA user_version = 1;"
+        """
+        CREATE TABLE giveaways (
+            id INTEGER PRIMARY KEY,
+            slug TEXT NOT NULL UNIQUE,
+            owner_id INTEGER NOT NULL,
+            title TEXT NOT NULL,
+            secret TEXT NOT NULL,
+            conditions TEXT NOT NULL DEFAULT '',
+            quest TEXT NOT NULL DEFAULT '',
+            allowed_instances TEXT NOT NULL DEFAULT '',
+            min_account_age_days INTEGER NOT NULL DEFAULT 0,
+            listed INTEGER NOT NULL DEFAULT 1,
+            hidden INTEGER NOT NULL DEFAULT 0,
+            post_url TEXT,
+            post_id TEXT,
+            created_at TEXT NOT NULL,
+            ends_at TEXT NOT NULL,
+            drawn_at TEXT,
+            winner_id INTEGER,
+            winner_notified_at TEXT,
+            secret_viewed_at TEXT
+        );
+        """
     )
     conn.execute(
         "INSERT INTO giveaways (slug, owner_id, title, secret, created_at, ends_at)"
         " VALUES ('a-b-c', 1, 'T', 'KEY-123', '2026-01-01Z', '2026-02-01Z')"
     )
+    conn.executescript("PRAGMA user_version = 1;")
     conn.commit()
     conn.close()
 
-    db.init_db(path)  # runs the v2 migration
+    db.init_db(path)  # runs the v2..v6 migrations in one pass
 
     conn = sqlite3.connect(path)
     cols = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
-    assert "reward" in cols and "reward_viewed_at" in cols
     assert "secret" not in cols and "secret_viewed_at" not in cols
+    assert "reward" not in cols  # v6 moved it off giveaways onto `winners`
     assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
-    assert conn.execute("SELECT reward FROM giveaways").fetchone()[0] == "KEY-123"
+    reward = conn.execute(
+        "SELECT w.reward FROM winners w JOIN giveaways g ON g.id = w.giveaway_id"
+        " WHERE g.slug = 'a-b-c'"
+    ).fetchone()[0]
+    assert reward == "KEY-123"
     conn.close()
 
 
@@ -173,8 +199,9 @@ def test_create_announce_enter_draw_win(client, fake):
     assert services.draw_due() == [slug]
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
-    assert g["winner_id"] == player["id"] and g["drawn_at"] and g["winner_notified_at"]
-    assert g["claim_deadline"] and not g["claimed_at"]
+        seat = services.get_winners(conn, g["id"])[0]
+    assert seat["user_id"] == player["id"] and g["drawn_at"] and seat["winner_notified_at"]
+    assert seat["claim_deadline"] and not seat["claimed_at"]
     dm = fake.posted[-1]
     assert dm["visibility"] == "direct" and "@player@other.social" in dm["text"]
     assert "claim your reward" in dm["text"].lower()
@@ -190,7 +217,8 @@ def test_create_announce_enter_draw_win(client, fake):
     assert "That's you" in page.text and "AAAA-BBBB-CCCC" in page.text
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
-    assert g["claimed_at"] and g["reward_viewed_at"]
+        seat = services.get_winners(conn, g["id"])[0]
+    assert seat["claimed_at"] and seat["reward_viewed_at"]
 
     # somebody else does not see the code
     login_as(client, make_user("loser@other.social"))
@@ -261,24 +289,60 @@ def test_logged_out_visitor_gets_a_share_link(client):
 def test_validation_errors(client):
     login_as(client, make_user())
     resp = client.post(
-        "/new", data={"title": "", "reward": "x", "hours": "1", "_csrf_token": csrf(client, "/new")}
+        "/new",
+        data={
+            "title": "",
+            "winner_count": "1",
+            "reward_1": "x",
+            "hours": "1",
+            "_csrf_token": csrf(client, "/new"),
+        },
     )
     assert resp.status_code == 422 and "Title is required" in resp.text
     resp = client.post(
-        "/new", data={"title": "t", "reward": "x", "hours": "99999", "_csrf_token": csrf(client)}
+        "/new",
+        data={
+            "title": "t",
+            "winner_count": "1",
+            "reward_1": "x",
+            "hours": "99999",
+            "_csrf_token": csrf(client),
+        },
     )
     assert resp.status_code == 422 and "between 1 hour and 90 days" in resp.text
     resp = client.post(
         "/new",
         data={
             "title": "t",
-            "reward": "x",
+            "winner_count": "1",
+            "reward_1": "x",
             "hours": "1",
             "allowed_instances": "not a host",
             "_csrf_token": csrf(client),
         },
     )
     assert resp.status_code == 422 and "Allowed servers" in resp.text
+    resp = client.post(
+        "/new",
+        data={
+            "title": "t",
+            "winner_count": "1",
+            "hours": "1",
+            "_csrf_token": csrf(client),
+        },
+    )
+    assert resp.status_code == 422 and "Reward 1 is required" in resp.text
+    resp = client.post(
+        "/new",
+        data={
+            "title": "t",
+            "winner_count": "99",
+            "reward_1": "x",
+            "hours": "1",
+            "_csrf_token": csrf(client),
+        },
+    )
+    assert resp.status_code == 422 and "Number of winners must be between 1 and 10" in resp.text
 
 
 def test_edit_delete_and_unlisted(client):
@@ -295,7 +359,8 @@ def test_edit_delete_and_unlisted(client):
     resp = client.post(
         f"/{slug}/edit",
         data={
-            "reward": "UPDATED-CODE",
+            "winner_count": "1",
+            "reward_1": "UPDATED-CODE",
             "quest": "hug a dog",
             "conditions": "",
             "hours": "1",
@@ -307,9 +372,10 @@ def test_edit_delete_and_unlisted(client):
     assert "Giveaway updated" in resp.text and "hug a dog" in resp.text
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
+        seat = services.get_winners(conn, g["id"])[0]
     assert db.parse_iso(g["ends_at"]) < db.now() + timedelta(hours=1, minutes=1)
     assert g["listed"] == 0  # checkbox not sent -> unlisted
-    assert g["reward"] == "UPDATED-CODE"  # reward is editable pre-draw too
+    assert seat["reward"] == "UPDATED-CODE"  # reward is editable pre-draw too
     assert slug not in client.get("/").text
     assert slug not in client.get("/sitemap.xml").text
     assert client.get(f"/{slug}").status_code == 200  # still reachable by link
@@ -341,7 +407,9 @@ def test_admin_hide_and_backup(client, tmp_path):
 
 def test_csrf_required(client):
     login_as(client, make_user())
-    resp = client.post("/new", data={"title": "t", "reward": "x", "hours": "1"})
+    resp = client.post(
+        "/new", data={"title": "t", "winner_count": "1", "reward_1": "x", "hours": "1"}
+    )
     assert resp.status_code == 403
 
 
@@ -350,7 +418,8 @@ def test_reward_is_rendered_markdown_for_the_winner(client, fake):
     login_as(client, host)
     slug = create_giveaway(
         client,
-        reward="**A shiny sword!**\n\nRedeem `AAAA-BBBB-CCCC` at https://example.com",
+        winner_count="1",
+        reward_1="**A shiny sword!**\n\nRedeem `AAAA-BBBB-CCCC` at https://example.com",
     )
 
     player = make_user("player@other.social")
@@ -373,7 +442,7 @@ def test_reward_is_rendered_markdown_for_the_winner(client, fake):
 def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
     host = make_user("host@example.social")
     login_as(client, host)
-    slug = create_giveaway(client, quest="pet a cat", reward="WRONG-CODE")
+    slug = create_giveaway(client, quest="pet a cat", winner_count="1", reward_1="WRONG-CODE")
 
     player = make_user("player@other.social")
     login_as(client, player)
@@ -386,15 +455,16 @@ def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
     assert services.draw_due() == [slug]
     with db.connect() as conn:
         before = services.get_giveaway(conn, slug)
+        before_seat = services.get_winners(conn, before["id"])[0]
 
     login_as(client, host)
-    assert "Edit reward" in client.get(f"/{slug}").text  # host panel button, post-draw
-    assert "Edit the reward" in client.get(f"/{slug}/edit").text
+    assert "Edit rewards" in client.get(f"/{slug}").text  # host panel button, post-draw
+    assert "Edit rewards" in client.get(f"/{slug}/edit").text
 
     # an empty reward is still rejected
     resp = client.post(
         f"/{slug}/edit",
-        data={"reward": "  ", "_csrf_token": csrf(client, f"/{slug}/edit")},
+        data={f"reward_{before_seat['id']}": "  ", "_csrf_token": csrf(client, f"/{slug}/edit")},
     )
     assert resp.status_code == 422 and "The reward" in resp.text
 
@@ -402,7 +472,7 @@ def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
     resp = client.post(
         f"/{slug}/edit",
         data={
-            "reward": "RIGHT-CODE",
+            f"reward_{before_seat['id']}": "RIGHT-CODE",
             "quest": "hug a dog",
             "hours": "500",
             "listed": "on",
@@ -413,9 +483,12 @@ def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
     assert "Reward updated" in resp.text
     with db.connect() as conn:
         after = services.get_giveaway(conn, slug)
-    assert after["reward"] == "RIGHT-CODE"
-    for field in ("quest", "ends_at", "listed", "winner_id", "drawn_at", "claim_deadline"):
+        after_seat = services.get_winners(conn, after["id"])[0]
+    assert after_seat["reward"] == "RIGHT-CODE"
+    for field in ("quest", "ends_at", "listed"):
         assert after[field] == before[field]
+    for field in ("user_id", "drawn_at", "claim_deadline"):
+        assert after_seat[field] == before_seat[field]
 
     # the winner sees the corrected reward
     login_as(client, player)
@@ -426,7 +499,7 @@ def test_reward_is_the_only_field_editable_after_the_draw(client, fake):
     login_as(client, make_user("nosy@other.social"))
     resp = client.post(
         f"/{slug}/edit",
-        data={"reward": "STOLEN", "_csrf_token": csrf(client)},
+        data={f"reward_{before_seat['id']}": "STOLEN", "_csrf_token": csrf(client)},
     )
     assert resp.status_code == 403
 

@@ -1,35 +1,37 @@
 {% extends "base.html.jinja" %}
-{% from "_forms.html.jinja" import md_editor %}
+{% from "_forms.html.jinja" import md_editor, winner_fields %}
 {% block title %}Edit · {{ g.title }} · {{ site_name }}{% endblock %}
 {% block content %}
 {% if g.drawn_at %}
-<h1 class="text-3xl font-bold mb-1">Edit the reward</h1>
+<h1 class="text-3xl font-bold mb-1">Edit rewards</h1>
 <p class="text-base-content/70 mb-6 break-words">
     <a class="link" href="/{{ g.slug }}">{{ g.title }}</a> · this giveaway has
-    been drawn, so the reward is the only thing still editable — fix a wrong
+    been drawn, so the rewards are the only thing still editable — fix a wrong
     code or a dead link here.
 </p>
 
 <form method="post" action="/{{ g.slug }}/edit" class="max-w-2xl space-y-4">
     {{ csrf_input | safe }}
     <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
+        {% for w in winners %}
         {{ md_editor(
-            "reward",
-            "The reward (kept secret — only the winner sees it)",
-            g.reward or "",
+            "reward_" ~ w.id,
+            "Reward #" ~ w.seat ~ (" — " ~ w.user_acct if w.user_acct else " — no winner"),
+            w.reward or "",
             rows=3,
             placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
-            hint="Only the winner ever sees this. They see the corrected text next time they open the page."
+            hint="Only this seat's winner ever sees it. They see the corrected text next time they open the page." if loop.first else ""
         ) }}
-        {% if g.claimed_at %}
+        {% if w.claimed_at %}
         <p class="text-sm text-warning">
-            The winner has already claimed this reward and may have seen the old
-            text — let them know if you change it.
+            @{{ w.user_acct }} has already claimed this reward and may have seen
+            the old text — let them know if you change it.
         </p>
         {% endif %}
+        {% endfor %}
     </fieldset>
     <div class="flex gap-2">
-        <button class="btn btn-primary">Save reward</button>
+        <button class="btn btn-primary">Save rewards</button>
         <a href="/{{ g.slug }}" class="btn btn-ghost">Cancel</a>
     </div>
 </form>
@@ -43,14 +45,7 @@
 <form method="post" action="/{{ g.slug }}/edit" class="max-w-2xl space-y-4">
     {{ csrf_input | safe }}
     <fieldset class="fieldset bg-base-100 rounded-box shadow-sm p-5 gap-4">
-        {{ md_editor(
-            "reward",
-            "The reward (kept secret — only the winner sees it)",
-            g.reward or "",
-            rows=3,
-            placeholder="AAAAA-BBBBB-CCCCC — or add a few lines of flavor text and instructions",
-            hint="Only the winner ever sees this."
-        ) }}
+        {{ winner_fields(rewards=rewards, count=count, max_winners=max_winners) }}
         {{ md_editor("quest", "Quest", g.quest or "", rows=2) }}
         <label class="floating-label">
             <span>Conditions</span>
@@ -109,8 +104,9 @@
                 {% if g.restart_if_unclaimed == 1 or g.restart_if_unclaimed == 'on' %}checked{% endif %}
             />
             <span
-                >Restart if the winner doesn't claim within 2 days (re-draw among
-                the other entrants, or reopen if nobody's left)</span
+                >Restart if a winner doesn't claim within 2 days (re-draw that
+                seat among the other entrants, or reopen the giveaway if
+                nobody's left)</span
             >
         </label>
     </fieldset>
