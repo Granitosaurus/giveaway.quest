@@ -35,6 +35,19 @@ def _load(slug: str, user: NamedDependency[dict | None], *, for_owner: bool = Fa
     return giveaway
 
 
+def _winner_count(data: dict[str, str]) -> int:
+    """Best-effort winner_count for re-rendering a form after a validation error
+    (real parsing/validation happens in services.parse_rewards)."""
+    try:
+        return max(1, min(int(data.get("winner_count") or 1), services.MAX_WINNERS))
+    except ValueError:
+        return 1
+
+
+def _posted_rewards(data: dict[str, str]) -> list[str]:
+    return [data.get(f"reward_{i}", "") for i in range(1, services.MAX_WINNERS + 1)]
+
+
 @get("/", sync_to_thread=True)
 def index(
     request: Request,
@@ -75,6 +88,9 @@ def new_form(request: Request, user: NamedDependency[dict]) -> Template:
         "new.html.jinja",
         user=user,
         form={"hours": 72, "listed": "on", "restart_if_unclaimed": "on"},
+        rewards=[],
+        count=1,
+        max_winners=services.MAX_WINNERS,
     )
 
 
@@ -84,7 +100,16 @@ def create(request: Request, user: NamedDependency[dict], data: Form) -> Templat
         form = services.GiveawayForm.from_form(data)
     except services.ValidationError as exc:
         flash(request, str(exc), "error")
-        return render(request, "new.html.jinja", status_code=422, user=user, form=data)
+        return render(
+            request,
+            "new.html.jinja",
+            status_code=422,
+            user=user,
+            form=data,
+            rewards=_posted_rewards(data),
+            count=_winner_count(data),
+            max_winners=services.MAX_WINNERS,
+        )
     with db.connect() as conn:
         giveaway = services.create_giveaway(conn, user, form)
     flash(request, "Giveaway created. Share the link so people can enter!", "success")
@@ -119,17 +144,17 @@ def giveaway_page(
     giveaway = _load(slug, user)
     status = services.status_of(giveaway)
     is_owner = bool(user) and user["id"] == giveaway["owner_id"]
-    is_winner = bool(user) and giveaway["winner_id"] == user["id"]
-    entry = problem = None
-    if user and not is_owner:
-        with db.connect() as conn:
+    with db.connect() as conn:
+        winners = services.get_winners(conn, giveaway["id"])
+        entry = problem = None
+        if user and not is_owner:
             entry = services.get_entry(conn, giveaway["id"], user["id"])
-        if not entry:
-            problem = services.eligibility_problem(giveaway, user)
-    claim_status = services.reward_claim_status(giveaway)
-    if is_winner and claim_status == "claimed":
-        with db.connect() as conn:
-            services.mark_reward_viewed(conn, giveaway)
+            if not entry:
+                problem = services.eligibility_problem(giveaway, user)
+        my_seat = next((w for w in winners if user and w["user_id"] == user["id"]), None)
+        claim_status = services.reward_claim_status(giveaway, my_seat)
+        if my_seat and claim_status == "claimed":
+            services.mark_reward_viewed(conn, my_seat)
     share_url = settings.url(f"/{giveaway['slug']}")
     suggested = services.suggested_post_text(giveaway["title"], giveaway["quest"])
     toot_text = f"{suggested}\n\n{share_url}"
@@ -140,7 +165,8 @@ def giveaway_page(
         g=giveaway,
         status=status,
         is_owner=is_owner,
-        is_winner=is_winner,
+        winners=winners,
+        my_seat=my_seat,
         claim_status=claim_status,
         entry=entry,
         problem=problem,
@@ -193,8 +219,18 @@ def claim(request: Request, slug: FromPath[str], user: NamedDependency[dict]) ->
 @get("/{slug:str}/edit", guards=[require_login], sync_to_thread=True)
 def edit_form(request: Request, slug: FromPath[str], user: NamedDependency[dict]) -> Template:
     giveaway = _load(slug, user, for_owner=True)
+    with db.connect() as conn:
+        winners = services.get_winners(conn, giveaway["id"])
     return render(
-        request, "edit.html.jinja", user=user, g=giveaway, status=services.status_of(giveaway)
+        request,
+        "edit.html.jinja",
+        user=user,
+        g=giveaway,
+        winners=winners,
+        rewards=[w["reward"] for w in winners],
+        count=giveaway["winner_count"],
+        max_winners=services.MAX_WINNERS,
+        status=services.status_of(giveaway),
     )
 
 
@@ -214,12 +250,24 @@ def edit(
                 services.update_giveaway(conn, giveaway, data)
     except services.ValidationError as exc:
         flash(request, str(exc), "error")
+        with db.connect() as conn:
+            winners = services.get_winners(conn, giveaway["id"])
+        if drawn:
+            # reflect the just-posted (possibly invalid) per-seat edits
+            winners = [{**w, "reward": data.get(f"reward_{w['id']}", w["reward"])} for w in winners]
+            rewards, count = [], giveaway["winner_count"]
+        else:
+            rewards, count = _posted_rewards(data), _winner_count(data)
         return render(
             request,
             "edit.html.jinja",
             status_code=422,
             user=user,
             g={**giveaway, **data},
+            winners=winners,
+            rewards=rewards,
+            count=count,
+            max_winners=services.MAX_WINNERS,
             status=services.status_of(giveaway),
         )
     flash(request, "Reward updated." if drawn else "Giveaway updated.", "success")

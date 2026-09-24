@@ -103,7 +103,9 @@ def _configure_jinja(engine: JinjaTemplateEngine) -> None:
         return f"{minutes}m left"
 
     env.filters.update(dt=dt, human=human, remaining=remaining, markdown=services.render_markdown)
-    env.globals.update(status_of=services.status_of)
+    env.globals.update(
+        status_of=services.status_of, reward_claim_status=services.reward_claim_status
+    )
 
 
 session_config = CookieBackendConfig(

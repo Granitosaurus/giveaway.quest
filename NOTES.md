@@ -76,6 +76,47 @@ Schema v5 added `restart_if_unclaimed`, `duration_hours`, `claim_deadline`,
 as claimed (`claimed_at = COALESCE(reward_viewed_at, drawn_at)`) so the deploy
 neither re-draws historic winners nor hides rewards they can already see.
 
+**Multiple winners per giveaway, one seat per reward.** A giveaway gives away
+`winner_count` (1..`services.MAX_WINNERS`, currently 10) codes to that many
+distinct entrants, no repeats. All the claim/notify state from v5 above moved
+off `giveaways` onto a new `winners` table — one row per seat, created (`reward`
+set, `user_id` NULL) when the giveaway is made. `services.draw()` fills every
+seat still missing a `user_id` from the giveaway's entrants, excluding anyone
+who already holds another seat in the same giveaway
+(`services._eligible_entrants`), via `secrets.SystemRandom().sample` so seats
+never repeat a winner. `giveaways.drawn_at` deliberately *stays* — it no longer
+means "this giveaway has a winner", it means "the background job last resolved
+this giveaway's outstanding seats", which is exactly what `due_giveaways`
+already keyed off, so that query and the "open"/"drawing"/"ended" states in
+`status_of()` didn't need to change at all.
+
+Claiming, no-shows and reopening are now **per seat**, independent of each
+other: `services.claim_reward`/`reward_claim_status`/`mark_reward_viewed` all
+take a `winners` row (looked up via `get_winner_for_user`/`get_winners`), and
+`process_unclaimed` queries lapsed *seats*, not giveaways. `_restart_unclaimed`
+drops the no-show's entry and re-draws just that one seat among the giveaway's
+remaining eligible entrants; only if none are left does it **reopen the whole
+giveaway** — clearing `giveaways.drawn_at` and pushing `ends_at` out by
+`_reopen_hours`, same as v5's single-winner reopen. That reopen is a deliberate
+reuse: the next `due_giveaways`/`draw_due()` pass picks the giveaway back up
+and `draw()` naturally fills only the still-empty seat(s), leaving every
+already-claimed/waiting seat on the same giveaway untouched — there's no
+separate "retry this one seat" code path. `winners.unclaimed_count` tracks
+cycles per seat, same no-cap policy as v5.
+
+The create/edit forms ask for a winner count plus that many reward boxes
+(`_forms.html.jinja`'s `winner_fields` macro, `reward_1..reward_N` fields,
+parsed by `services.parse_rewards`); pre-draw editing
+(`services.update_giveaway`) replaces the whole seat set wholesale (safe
+because no seat can have a `user_id` yet), post-draw editing
+(`services.update_reward`) patches each seat's `reward` independently via
+`reward_<winners.id>` fields and can't change the seat count. Schema v6 added
+`giveaways.winner_count` and the `winners` table, and migrated every existing
+giveaway into one seat-1 `winners` row from its old `reward`/`winner_id`/etc.
+columns before dropping those columns from `giveaways` — old single-winner
+giveaways behave identically afterwards, just through the same one-seat code
+path as everything else.
+
 **Posts from the site's own account never carry raw host text.**
 `services.neutralize_for_post` swaps `@`/`#` for their full-width look-alikes
 and strips URL schemes before a title lands in the winner DM or the default

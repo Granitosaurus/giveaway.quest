@@ -137,11 +137,12 @@ def list_(all: bool = False, hidden: bool = False, q: str = "", limit: int = 50)
 
 @admin.command
 def show(slug: str) -> None:
-    """Print everything about one giveaway, including the reward and entrants."""
+    """Print everything about one giveaway, including its rewards, winners and entrants."""
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
         if not g:
             sys.exit("not found")
+        winners = services.get_winners(conn, g["id"])
         entrants = conn.execute(
             "SELECT u.acct, e.created_at FROM entries e JOIN users u ON u.id = e.user_id"
             " WHERE e.giveaway_id = ? ORDER BY e.id",
@@ -149,6 +150,11 @@ def show(slug: str) -> None:
         ).fetchall()
     for key, value in g.items():
         print(f"{key:>22}: {value}")
+    print(f"{'winners':>22}: {len(winners)}")
+    for w in winners:
+        holder = w["user_acct"] or "-"
+        status = services.reward_claim_status(g, w) if w["user_id"] else "none"
+        print(f"{'':>24}#{w['seat']} {holder:<40} {status:<10} {w['reward']!r}")
     print(f"{'entrants':>22}: {len(entrants)}")
     for e in entrants:
         print(f"{'':>24}{e['acct']}  ({e['created_at']})")
