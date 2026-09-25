@@ -186,6 +186,16 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   `podman-compose up -d --build` does *not* recreate an already-running
   container just because its image changed, so the old code would keep
   serving silently without the `--force-recreate` that `redeploy` does.
+  It also passes `GQ_VERSION` (from `git describe`) into the container, shown
+  in the footer, so you can tell at a glance whether a deploy actually landed
+  — no more wondering if `redeploy` pulled the commit you think it did.
+- **Cut a release**: `uv run invoke release major|minor|patch` — bumps the
+  version in `pyproject.toml`/`giveaway_quest/__init__.py`, commits, tags it
+  (`vX.Y.Z`), pushes the branch and tag, then redeploys with that tag as
+  `GQ_VERSION`. Refuses on a dirty tree or a branch that isn't in sync with
+  its upstream, since the tag is meant to be trustworthy proof of what's
+  deployed. Push your other commits first; `release` only makes the version
+  bump commit.
 - **Run a backup now**: `uv run invoke backup`; `systemctl --user list-timers`
   shows the next scheduled hourly run.
 - The two systemd units (`giveaway-quest-compose.service`,

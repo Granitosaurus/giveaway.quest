@@ -6,6 +6,10 @@ services:
     env_file: .env
     environment:
       GQ_DATA_DIR: /data
+      # Set by `invoke redeploy`/`invoke release` (git describe or a release
+      # tag) so the footer/cache-busting query string prove a deploy landed;
+      # empty here just falls back to the package version (see config.py).
+      GQ_VERSION: ${GQ_VERSION:-}
     volumes:
       - ./data:/data
     expose:
