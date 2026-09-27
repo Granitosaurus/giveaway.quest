@@ -1,6 +1,6 @@
 [project]
 name = "giveaway-quest"
-version = "1.1.0"
+version = "1.1.1"
 description = "Give away digital codes (game keys etc.) to verified Fediverse people, with a little quest."
 readme = "README.md"
 requires-python = ">=3.13"
