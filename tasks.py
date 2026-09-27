@@ -131,14 +131,28 @@ def release(c, part):
 
         _write_version(pyproject, _PYPROJECT_VERSION_RE, f'version = "{new_version}"')
         _write_version(init_py, _INIT_VERSION_RE, f'__version__ = "{new_version}"')
+        # Keep the lockfile's recorded project version in sync too, or it
+        # drifts on the next `uv sync`/`nix develop` and leaves the tree dirty.
+        c.run("uv lock", hide=True)
 
-        c.run(f"git add {pyproject} {init_py}")
+        c.run(f"git add {pyproject} {init_py} {ROOT / 'uv.lock'}")
         c.run(f'git commit -m "release {tag}"')
         c.run(f'git tag -a {tag} -m "release {tag}"')
         c.run("git push")
         c.run(f"git push origin {tag}")
 
     redeploy(c, version=tag)
+
+
+@task
+def gq(c, cmd):
+    """Run a `gq` (in-container admin CLI) command against the live container.
+
+    `cmd` is the whole `gq` command line as one quoted string, e.g.
+    `uv run invoke gq "admin reopen-empty --yes"`.
+    """
+    with c.cd(str(ROOT)):
+        c.run(f"{PODMAN_COMPOSE} exec app gq {cmd}", pty=True)
 
 
 @task

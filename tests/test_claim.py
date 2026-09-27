@@ -180,6 +180,60 @@ def test_draw_partially_fills_seats_when_short_on_entrants(client, fake):
     assert services.status_of(g) == "ended"
 
 
+def test_no_entrants_reopens_instead_of_ending_with_no_winner(client, fake):
+    login_as(client, make_user("host@example.social"))
+    slug = create_giveaway(client, hours="48")  # restart_if_unclaimed defaults on
+    _run_to_draw(client, slug)
+
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+    assert services.status_of(g) == "open"  # reopened, not ended with zero winners
+    assert g["ends_at"] > db.iso(db.now())
+    assert _seats(slug)[0]["user_id"] is None
+
+    # once someone actually enters, the next deadline pass draws them normally
+    _enter(client, slug, "late@other.social")
+    _run_to_draw(client, slug)
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+    assert services.status_of(g) == "ended"
+    assert _seats(slug)[0]["user_id"] is not None
+
+
+def test_no_entrants_ends_with_no_winner_when_restart_disabled(client, fake):
+    login_as(client, make_user("host@example.social"))
+    slug = create_giveaway(client, restart_if_unclaimed="")
+    _run_to_draw(client, slug)
+
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+    assert services.status_of(g) == "ended"
+    assert _seats(slug)[0]["user_id"] is None
+
+
+def test_reopen_empty_repairs_pre_fix_zero_winner_giveaways(client, fake):
+    """Simulates what a pre-fix build left behind: `drawn_at` set, no winner,
+    `restart_if_unclaimed` on - `gq admin reopen-empty` (services.ended_without_winners
+    + reopen_giveaway) is the one-off repair for exactly this shape."""
+    login_as(client, make_user("host@example.social"))
+    slug = create_giveaway(client, hours="48")
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+        conn.execute("UPDATE giveaways SET drawn_at = ? WHERE id = ?", (db.iso(db.now()), g["id"]))
+
+    with db.connect() as conn:
+        stuck = services.ended_without_winners(conn)
+        assert [g["slug"] for g in stuck] == [slug]
+        for g in stuck:
+            services.reopen_giveaway(conn, g)
+
+    with db.connect() as conn:
+        g = services.get_giveaway(conn, slug)
+        assert services.status_of(g) == "open"
+        assert g["ends_at"] > db.iso(db.now())
+        assert services.ended_without_winners(conn) == []
+
+
 def test_no_show_only_affects_its_own_seat(client, fake):
     login_as(client, make_user("host@example.social"))
     slug = create_giveaway(client, winner_count="2", reward_1="A", reward_2="B")
