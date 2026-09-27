@@ -820,20 +820,23 @@ def _eligible_entrants(conn: sqlite3.Connection, giveaway_id: int) -> list[dict]
 
 def draw(conn: sqlite3.Connection, giveaway: dict) -> list[dict]:
     """Fill every still-open seat with a distinct entrant, CSPRNG, no repeats within
-    this giveaway. Leftover seats stay winnerless if there aren't enough entrants.
-    Returns the seats newly filled.
+    this giveaway. Leftover seats stay winnerless if there aren't enough entrants
+    to fill all of them. Returns the seats newly filled.
+
+    If *no* entrant at all was eligible (nobody entered, or everybody who did
+    already holds another seat) and `restart_if_unclaimed` is set, the giveaway
+    is reopened for fresh entries instead of being marked ended with zero
+    winners, the same way an unclaimed seat reopens it in `_restart_unclaimed`:
+    `ends_at` is pushed out and `drawn_at` stays null, so `due_giveaways` picks
+    it back up and this keeps happening indefinitely until someone actually
+    wins a seat. A giveaway that manages to fill at least one seat still ends
+    normally even with other seats left empty - only a total no-show restarts.
     """
     now = db.now()
-    conn.execute(
-        "UPDATE giveaways SET drawn_at = ? WHERE id = ? AND drawn_at IS NULL",
-        (db.iso(now), giveaway["id"]),
-    )
     open_seats = conn.execute(
         "SELECT * FROM winners WHERE giveaway_id = ? AND user_id IS NULL ORDER BY seat",
         (giveaway["id"],),
     ).fetchall()
-    if not open_seats:
-        return []
     entrants = _eligible_entrants(conn, giveaway["id"])
     chosen = secrets.SystemRandom().sample(entrants, k=min(len(entrants), len(open_seats)))
     filled_ids = []
@@ -843,6 +846,17 @@ def draw(conn: sqlite3.Connection, giveaway: dict) -> list[dict]:
             (winner["id"], db.iso(now), db.iso(now + CLAIM_WINDOW), seat["id"]),
         )
         filled_ids.append(seat["id"])
+    if not filled_ids and open_seats and giveaway["restart_if_unclaimed"]:
+        conn.execute(
+            "UPDATE giveaways SET ends_at = ? WHERE id = ?",
+            (db.iso(now + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
+        )
+        log.info("%s: no eligible entrants at the deadline, reopened", giveaway["slug"])
+    else:
+        conn.execute(
+            "UPDATE giveaways SET drawn_at = ? WHERE id = ? AND drawn_at IS NULL",
+            (db.iso(now), giveaway["id"]),
+        )
     return [w for w in get_winners(conn, giveaway["id"]) if w["id"] in filled_ids]
 
 
@@ -1037,3 +1051,30 @@ def process_unclaimed() -> list[str]:
         log.info("%s seat %s unclaimed: %s", giveaway["slug"], winner["seat"], outcome)
         handled.append(giveaway["slug"])
     return handled
+
+
+def ended_without_winners(conn: sqlite3.Connection) -> list[dict]:
+    """Ended giveaways that filled zero seats even though `restart_if_unclaimed`
+    was set - the ones a pre-fix build of `draw()` ended for good instead of
+    reopening (see its docstring). One-off repair target for `gq admin
+    reopen-empty`; going forward `draw()` reopens these itself, so this list
+    should only ever contain giveaways that ended before the fix shipped.
+    """
+    return conn.execute(
+        GIVEAWAY_SELECT
+        + """ WHERE g.drawn_at IS NOT NULL AND g.restart_if_unclaimed = 1
+                AND NOT EXISTS (
+                    SELECT 1 FROM winners w WHERE w.giveaway_id = g.id AND w.user_id IS NOT NULL
+                )
+              ORDER BY g.drawn_at"""
+    ).fetchall()
+
+
+def reopen_giveaway(conn: sqlite3.Connection, giveaway: dict) -> None:
+    """Clear `drawn_at` and push `ends_at` out by `_reopen_hours`, same as the
+    zero-entrant reopen `draw()` now does on its own. Used to repair giveaways
+    from `ended_without_winners` (`gq admin reopen-empty`)."""
+    conn.execute(
+        "UPDATE giveaways SET drawn_at = NULL, ends_at = ? WHERE id = ?",
+        (db.iso(db.now() + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
+    )

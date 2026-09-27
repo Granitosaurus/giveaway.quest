@@ -193,6 +193,24 @@ def delete(slug: str, yes: bool = False) -> None:
 
 
 @admin.command
+def reopen_empty(yes: bool = False) -> None:
+    """Reopen ended giveaways that drew zero winners (one-off repair for a fixed
+    bug: `draw()` used to end these for good instead of restarting them).
+
+    Dry-run by default (lists what would be reopened); pass --yes to apply.
+    """
+    with db.connect() as conn:
+        stuck = services.ended_without_winners(conn)
+        for g in stuck:
+            print(f"{g['slug']:<32} ended={g['drawn_at']} entries={g['entry_count']}")
+        if yes:
+            for g in stuck:
+                services.reopen_giveaway(conn, g)
+    verb = "reopened" if yes else "would reopen (pass --yes to apply)"
+    print(f"{verb}: {len(stuck)} giveaway(s)")
+
+
+@admin.command
 def ban(acct: str, unban: bool = False) -> None:
     """Ban (or --unban) a user by acct (user@instance). Banned users can't log in or win."""
     acct = acct.lstrip("@").lower()

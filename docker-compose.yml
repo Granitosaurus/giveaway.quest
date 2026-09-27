@@ -21,5 +21,10 @@ services:
     command: tunnel run
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      - app
+    # Deliberately no `depends_on: [app]`: podman-compose turns that into
+    # `podman create --requires=<app container>` on cloudflared, which makes
+    # podman refuse to remove/recreate app while cloudflared exists ("has
+    # dependent containers which must be removed before it") -- exactly the
+    # error `invoke redeploy --force-recreate app` kept hitting. cloudflared
+    # just proxies to app over the network at request time and reconnects
+    # fine regardless of start order, so the strict requirement isn't needed.

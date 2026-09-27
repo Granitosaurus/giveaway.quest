@@ -198,6 +198,8 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   bump commit.
 - **Run a backup now**: `uv run invoke backup`; `systemctl --user list-timers`
   shows the next scheduled hourly run.
+- **Run a `gq` command against the live container**: `uv run invoke gq "<command>"`,
+  e.g. `uv run invoke gq "admin reopen-empty --yes"` or `uv run invoke gq "admin show <slug>"`.
 - The two systemd units (`giveaway-quest-compose.service`,
   `giveaway-quest-backup.timer`) call `uv run invoke up`/`down`/`backup`
   under the hood — reboots need no manual steps.
