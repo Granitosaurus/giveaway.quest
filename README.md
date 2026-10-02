@@ -1,22 +1,26 @@
 # giveaway.quest
 
-Give away spare game keys and other digital codes to *real* people on the
-Fediverse. Hosts log in with Mastodon, write up the reward (a code, or Markdown
-with some flavor text), set a deadline and a little quest ("pet a cat");
-participants log in with Mastodon, agree to the conditions and enter; at the
-deadline the site picks a winner at random and DMs them from the giveaway.quest
-account. The winner has two days to claim the reward (a button reveals it); if
-they don't, it's re-drawn among the other entrants, or the giveaway reopens if
-nobody is left. Turn that off per-giveaway with the "restart if unclaimed" box.
-Logging in only ever reads your profile &mdash; the site never posts as you.
+Web App for giving away spare game keys and other digital codes to *real* people on the
+Fediverse with a bit of gamified flavor text.
+
+![screenshot](./screenshot.png)
+![screenshot2](./screenshot2.png)
+
+Key features:   
+- Mastodon based - login with mastodon, comments through mastodon etc.
+- Multi reward / winner support - host multiple keys in single giveaway
+- Automatic restart for expired / failed giveaways
 
 Stack: Python 3.13 · [Litestar](https://litestar.dev) · SQLite · Jinja ·
 Tailwind v4 + [daisyUI](https://daisyui.com) (no JS framework, one tiny inline
 script for countdowns) · [cyclopts](https://github.com/BrianPugh/cyclopts) CLI.
 
+_AI use disclaimer: I've made several projects using this stack so it's based of my personal 
+project skeletons but most of the boring code is written by LLMs so responsible LLM PRs are also welcome!_
+
 ## Development
 
-Everything is provided by the Nix flake (Python, uv, Tailwind standalone CLI
+Everything is provided by the Nix flake (`flake.nix`) (Python, uv, Tailwind standalone CLI
 with daisyUI, sqlite, ruff):
 
 ```sh
@@ -36,6 +40,9 @@ uv run gq --help              # admin CLI (see below)
 
 If your Nix does not have flakes enabled:
 `nix --extra-experimental-features 'nix-command flakes' develop`.
+
+_if you're not on nix then take a look at `flake.nix` which is very descriptive 
+and you should be able to replicate the dev environment on your system_
 
 ### Testing the Mastodon login locally
 
@@ -216,7 +223,7 @@ and link-local ranges, with MagicDNS exempted. Without it the public app
 container could reach Windmill/CloakBrowser on the Tailscale IP. If a
 container ever legitimately needs a private destination, add a `RETURN` rule
 for it there. Verify after changes with
-`podman exec giveaway-quest_app_1 python -c "import urllib.request as u; u.urlopen('http://100.74.250.95:8001/', timeout=3)"`
+`podman exec giveaway-quest_app_1 python -c "import urllib.request as u; u.urlopen('http://<tailnet-ip>:8001/', timeout=3)"`
 — it must fail with "Connection refused". Background and remaining items:
 `security-review-2026-09-06.md`.
 

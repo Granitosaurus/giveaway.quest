@@ -394,7 +394,7 @@ write access here. `services.get_comments(giveaway)`:
 - Headless Chromium from nixpkgs could not load pages from the Claude Code
   sandbox (about:blank worked, `http://127.0.0.1` hung), so no screenshots
   were taken. Visual checks were done by binding the dev server to the
-  Tailscale IP (`gq serve --host 100.74.250.95`) and opening it on a phone.
+  Tailscale IP (`gq serve --host <tailnet-ip>`) and opening it on a phone.
   Remember to set `GQ_BASE_URL` to the same host so OAuth redirects work.
 
 ## Testing

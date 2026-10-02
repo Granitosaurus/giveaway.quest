@@ -4,7 +4,7 @@ version = "1.1.1"
 description = "Give away digital codes (game keys etc.) to verified Fediverse people, with a little quest."
 readme = "README.md"
 requires-python = ">=3.13"
-license = "MIT"
+license = "GPL-3.0-or-later"
 dependencies = [
     "litestar[jinja,cryptography]>=2.24,<3",
     "uvicorn>=0.52",
