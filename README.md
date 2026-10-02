@@ -1,6 +1,6 @@
 # giveaway.quest
 
-Web App for giving away spare game keys and other digital codes to *real* people on the
+[giveway.quest](https://giveaway.quest/) - web app for giving away spare game keys and other digital codes to *real* people on the
 Fediverse with a bit of gamified flavor text.
 
 ![screenshot](./screenshot.png)
