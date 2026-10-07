@@ -48,7 +48,8 @@ CREATE TABLE IF NOT EXISTS giveaways (
     listed               INTEGER NOT NULL DEFAULT 1, -- show on the front page / sitemap
     hidden               INTEGER NOT NULL DEFAULT 0, -- admin moderation
     restart_if_unclaimed INTEGER NOT NULL DEFAULT 1, -- re-draw/reopen seats a winner never claims
-    duration_hours       INTEGER,                    -- original run length, reused when reopening
+    auto_extend          INTEGER NOT NULL DEFAULT 1, -- reopen for 24h more if nobody enters at all
+    duration_hours       INTEGER,                    -- original run length, unused since v7
     winner_count         INTEGER NOT NULL DEFAULT 1, -- number of seats/rewards, see `winners`
     post_url             TEXT,
     post_id              TEXT,
@@ -124,7 +125,7 @@ def _dict_factory(cursor: sqlite3.Cursor, row: tuple) -> dict:
     return {col[0]: row[i] for i, col in enumerate(cursor.description)}
 
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 
 def _migrate(conn: sqlite3.Connection, version: int) -> None:
@@ -208,6 +209,14 @@ def _migrate(conn: sqlite3.Connection, version: int) -> None:
         ):
             if column in columns:
                 conn.execute(f"ALTER TABLE giveaways DROP COLUMN {column}")
+    if version < 7:
+        # v7: the zero-entrants reopen used to be tied to `restart_if_unclaimed`
+        # (meant for winner no-shows) and re-ran the giveaway's full original
+        # duration. It's now its own flag with a fixed 24h extension - see
+        # NOTES.md. Existing giveaways default to on, matching prior behaviour.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(giveaways)")}
+        if "auto_extend" not in columns:
+            conn.execute("ALTER TABLE giveaways ADD COLUMN auto_extend INTEGER NOT NULL DEFAULT 1")
 
 
 def init_db(path: Path | None = None) -> None:

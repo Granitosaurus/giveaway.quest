@@ -51,6 +51,11 @@
             build-css --minify
             exec uv run gq serve --reload --debug "$@"
           '';
+
+          invoke = pkgs.writeShellScriptBin "invoke" ''
+            set -euo pipefail
+            exec uv run invoke "$@"
+          '';
         in
         {
           default = pkgs.mkShell {
@@ -63,6 +68,7 @@
               build-css
               pkgs.ty
               dev
+              invoke
             ];
 
             env = {

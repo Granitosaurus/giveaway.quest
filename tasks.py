@@ -13,6 +13,7 @@ import re
 import shlex
 from pathlib import Path
 
+import httpx
 from invoke import task
 
 ROOT = Path(__file__).resolve().parent
@@ -93,14 +94,73 @@ def _write_version(path: Path, pattern: str, replacement: str) -> None:
 _PYPROJECT_VERSION_RE = r'^version = "(\d+)\.(\d+)\.(\d+)"'
 _INIT_VERSION_RE = r'^__version__ = "(\d+)\.(\d+)\.(\d+)"'
 
+NEW_MD = ROOT / "NEW.md"
+_NEW_MD_TEMPLATE = """<!--
+Add a bullet point per notable change as you work. `uv run invoke release`
+turns everything below this comment into the GitHub release notes for the
+next tag, then empties this file back to just this comment.
+-->
+"""
+
+
+def _changelog_entries() -> str:
+    """NEW.md's content with its instructional HTML comment stripped. Empty if
+    nobody added anything since the last release."""
+    return re.sub(r"<!--.*?-->", "", NEW_MD.read_text(), flags=re.S).strip()
+
+
+def _github_repo(c) -> tuple[str, str]:
+    url = c.run("git remote get-url origin", hide=True).stdout.strip()
+    match = re.search(r"github\.com[:/]([^/]+)/(.+?)(\.git)?$", url)
+    if not match:
+        raise SystemExit(f"could not parse a GitHub owner/repo out of remote {url!r}")
+    return match.group(1), match.group(2)
+
+
+def _create_github_release(c, tag: str, notes: str) -> None:
+    """POST a GitHub release for `tag` with `notes` as its body.
+
+    Needs `GH_TOKEN` in `.env` -- a fine-grained PAT scoped to just this repo
+    with "Contents: read and write" permission (that's what release creation
+    needs; nothing broader). See NOTES.md for why this isn't `gh auth login`.
+    Never raises: the tag and push already happened by the time this runs, so
+    a release failure here only warns instead of undoing that.
+    """
+    token = os.environ.get("GH_TOKEN")
+    if not token:
+        print("GH_TOKEN not set in .env -- skipped the GitHub release, tag was still pushed")
+        return
+    owner, repo = _github_repo(c)
+    try:
+        resp = httpx.post(
+            f"https://api.github.com/repos/{owner}/{repo}/releases",
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"tag_name": tag, "name": tag, "body": notes},
+            timeout=15,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        print(f"GitHub release creation failed ({exc}) -- tag was still pushed")
+
 
 @task
 def release(c, part):
-    """Bump the version (major|minor|patch), tag it, push, and redeploy with that tag.
+    """Bump the version (major|minor|patch), tag it, push, cut a GitHub release
+    from NEW.md, and redeploy with that tag.
 
     Refuses on a dirty working tree or a branch that isn't pushed, since the
     git tag is meant to be the source of truth for "what's actually deployed"
     -- a tag made from unpushed or uncommitted state would lie about that.
+
+    NEW.md is the running changelog: add a bullet per notable change as you
+    work. Whatever is in it becomes the GitHub release's notes, then the
+    file is emptied back to its instructional comment as part of the
+    version-bump commit. An empty NEW.md, or no GH_TOKEN in .env, just skips
+    the GitHub release -- the tag is still cut and pushed either way.
     """
     if part not in ("major", "minor", "patch"):
         raise SystemExit(f"part must be major, minor or patch, not {part!r}")
@@ -116,6 +176,8 @@ def release(c, part):
             raise SystemExit("current branch has no upstream to compare against") from exc
         if local != upstream:
             raise SystemExit("local branch is not in sync with its upstream -- pull/push first")
+
+        notes = _changelog_entries()
 
         pyproject = ROOT / "pyproject.toml"
         init_py = ROOT / "giveaway_quest" / "__init__.py"
@@ -134,12 +196,18 @@ def release(c, part):
         # Keep the lockfile's recorded project version in sync too, or it
         # drifts on the next `uv sync`/`nix develop` and leaves the tree dirty.
         c.run("uv lock", hide=True)
+        NEW_MD.write_text(_NEW_MD_TEMPLATE)
 
-        c.run(f"git add {pyproject} {init_py} {ROOT / 'uv.lock'}")
+        c.run(f"git add {pyproject} {init_py} {ROOT / 'uv.lock'} {NEW_MD}")
         c.run(f'git commit -m "release {tag}"')
         c.run(f'git tag -a {tag} -m "release {tag}"')
         c.run("git push")
         c.run(f"git push origin {tag}")
+
+        if notes:
+            _create_github_release(c, tag, notes)
+        else:
+            print("NEW.md was empty -- tag pushed, no GitHub release created")
 
     redeploy(c, version=tag)
 

@@ -109,6 +109,18 @@
                 nobody's left)</span
             >
         </label>
+        <label class="label cursor-pointer items-start justify-start gap-3 whitespace-normal">
+            <input
+                type="checkbox"
+                name="auto_extend"
+                class="checkbox mt-0.5"
+                {% if g.auto_extend == 1 or g.auto_extend == 'on' %}checked{% endif %}
+            />
+            <span
+                >Auto-extend if nobody enters by the deadline (reopen for
+                another 24 hours instead of ending with no winner)</span
+            >
+        </label>
     </fieldset>
     <div class="flex gap-2">
         <button class="btn btn-primary">Save</button>

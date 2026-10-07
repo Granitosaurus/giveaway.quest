@@ -128,6 +128,7 @@ def create_giveaway(client: TestClient, **overrides) -> str:
         "hours": "48",
         "listed": "on",
         "restart_if_unclaimed": "on",
+        "auto_extend": "on",
         "_csrf_token": csrf(client, "/new"),
     }
     form.update(overrides)

@@ -76,6 +76,22 @@ Schema v5 added `restart_if_unclaimed`, `duration_hours`, `claim_deadline`,
 as claimed (`claimed_at = COALESCE(reward_viewed_at, drawn_at)`) so the deploy
 neither re-draws historic winners nor hides rewards they can already see.
 
+**Zero-entrant reopen is now its own flag, fixed at 24h, not the giveaway's own
+duration.** Originally `draw()`'s "nobody entered at all" reopen (above) reused
+`restart_if_unclaimed` - the winner-no-show flag - and pushed `ends_at` out by
+`duration_hours`, the giveaway's *own* configured run length. That meant a
+giveaway created to run 30 days would silently restart for another 30 days
+every time it drew zero entrants, which could repeat indefinitely. Schema v7
+splits this into `giveaways.auto_extend` (its own checkbox on the create/edit
+forms, defaulting on) gating *only* the zero-entrant path in `draw()` and
+`ended_without_winners`/`reopen_giveaway` (the `gq admin reopen-empty` repair
+pair); `restart_if_unclaimed` keeps gating the winner-no-show re-draw/reopen in
+`_restart_unclaimed`/`process_unclaimed`/`claim_reward`/`reward_claim_status`,
+untouched. Both reopen paths now push `ends_at` out by a fixed
+`services.REOPEN_EXTEND` (24h) instead of `duration_hours`/`_reopen_hours`,
+which is gone; `duration_hours` is still stored at creation but nothing reads
+it anymore.
+
 **Multiple winners per giveaway, one seat per reward.** A giveaway gives away
 `winner_count` (1..`services.MAX_WINNERS`, currently 10) codes to that many
 distinct entrants, no repeats. All the claim/notify state from v5 above moved
@@ -432,3 +448,31 @@ safe (see double-wrap above).
    enable-linger`). See README's "Deployment sketch" / "Maintaining it".
 7. Security review 2026-09-06 (`security-review-2026-09-06.md`): fixed the
    high/medium findings; the "Remaining" section there is the open list.
+
+## Changelog / releases
+
+**`NEW.md` is a staging changelog, not a history.** It holds only the
+bullets for the *next* release — add one per notable change as you work.
+`tasks.py`'s `release` task reads it (stripping its instructional HTML
+comment; `_changelog_entries()`), and if there's anything left, POSTs it as
+a GitHub release body (`_create_github_release`) right after pushing the
+tag, so the actual changelog history lives as GitHub releases (one per
+tag), not as an ever-growing file in the repo. `NEW.md` itself is then
+truncated back to just the comment and committed as part of the
+version-bump commit, ready for the next round. An empty `NEW.md` (nobody
+wrote anything since the last release) skips release creation entirely
+rather than erroring or creating an empty release — the tag is still cut,
+annotated, and pushed either way, so `release` never *requires* a
+changelog entry.
+
+**Release creation hits the GitHub REST API directly with `httpx` (already
+a dependency) instead of shelling out to the `gh` CLI.** `gh auth login`
+stores a single host-wide OAuth token (`repo`+`read:org`+`gist`+`workflow`
+scopes) covering every repo the account can touch — too broad for what's
+meant to be one task doing one thing to one repo, especially once an agent
+is the one running `invoke release`. Instead `GH_TOKEN` in `.env` is meant
+to be a *fine-grained* PAT scoped to just this repository with only
+"Contents: read and write" (the minimum release creation needs). Missing
+`GH_TOKEN` prints a message and skips the release rather than failing the
+whole task — the tag/push already happened and shouldn't be undone over a
+release that's easy to create by hand afterwards.

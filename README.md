@@ -198,11 +198,21 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   — no more wondering if `redeploy` pulled the commit you think it did.
 - **Cut a release**: `uv run invoke release major|minor|patch` — bumps the
   version in `pyproject.toml`/`giveaway_quest/__init__.py`, commits, tags it
-  (`vX.Y.Z`), pushes the branch and tag, then redeploys with that tag as
-  `GQ_VERSION`. Refuses on a dirty tree or a branch that isn't in sync with
-  its upstream, since the tag is meant to be trustworthy proof of what's
-  deployed. Push your other commits first; `release` only makes the version
-  bump commit.
+  (`vX.Y.Z`), pushes the branch and tag, cuts a GitHub release from `NEW.md`,
+  then redeploys with that tag as `GQ_VERSION`. Refuses on a dirty tree or a
+  branch that isn't in sync with its upstream, since the tag is meant to be
+  trustworthy proof of what's deployed. Push your other commits first;
+  `release` only makes the version bump commit.
+  Add a bullet to `NEW.md` per notable change as you work; `release` uses
+  whatever's there as the GitHub release notes and empties the file back to
+  its instructional comment. An empty `NEW.md` just skips the GitHub
+  release — the tag is still cut and pushed.
+  The GitHub release itself needs a `GH_TOKEN` in `.env`: a
+  [fine-grained personal access token](https://github.com/settings/personal-access-tokens)
+  scoped to just this repo with "Contents: read and write" permission and
+  nothing else — not the full-account access a plain `gh auth login` would
+  grant. Without it, `release` still cuts and pushes the tag, just skips the
+  GitHub release and says so.
 - **Run a backup now**: `uv run invoke backup`; `systemctl --user list-timers`
   shows the next scheduled hourly run.
 - **Run a `gq` command against the live container**: `uv run invoke gq "<command>"`,

@@ -107,7 +107,10 @@ def test_unclaimed_reopens_when_no_entrants_left(client, fake):
     assert seat["user_id"] is None and g["drawn_at"] is None and seat["claim_deadline"] is None
     assert seat["unclaimed_count"] == 1
     assert services.status_of(g) == "open"
-    assert db.parse_iso(g["ends_at"]) > db.now() + timedelta(hours=47)
+    # fixed REOPEN_EXTEND (24h), not the giveaway's own 48h duration
+    assert (
+        db.now() + timedelta(hours=23) < db.parse_iso(g["ends_at"]) < db.now() + timedelta(hours=25)
+    )
 
     # the giveaway runs again and can be won on a second pass
     login_as(client, player)
@@ -182,13 +185,16 @@ def test_draw_partially_fills_seats_when_short_on_entrants(client, fake):
 
 def test_no_entrants_reopens_instead_of_ending_with_no_winner(client, fake):
     login_as(client, make_user("host@example.social"))
-    slug = create_giveaway(client, hours="48")  # restart_if_unclaimed defaults on
+    slug = create_giveaway(client, hours="48")  # auto_extend defaults on
     _run_to_draw(client, slug)
 
     with db.connect() as conn:
         g = services.get_giveaway(conn, slug)
     assert services.status_of(g) == "open"  # reopened, not ended with zero winners
-    assert g["ends_at"] > db.iso(db.now())
+    # fixed REOPEN_EXTEND (24h), not the giveaway's own 48h duration
+    assert (
+        db.now() + timedelta(hours=23) < db.parse_iso(g["ends_at"]) < db.now() + timedelta(hours=25)
+    )
     assert _seats(slug)[0]["user_id"] is None
 
     # once someone actually enters, the next deadline pass draws them normally
@@ -200,9 +206,9 @@ def test_no_entrants_reopens_instead_of_ending_with_no_winner(client, fake):
     assert _seats(slug)[0]["user_id"] is not None
 
 
-def test_no_entrants_ends_with_no_winner_when_restart_disabled(client, fake):
+def test_no_entrants_ends_with_no_winner_when_auto_extend_disabled(client, fake):
     login_as(client, make_user("host@example.social"))
-    slug = create_giveaway(client, restart_if_unclaimed="")
+    slug = create_giveaway(client, auto_extend="")
     _run_to_draw(client, slug)
 
     with db.connect() as conn:
@@ -213,7 +219,7 @@ def test_no_entrants_ends_with_no_winner_when_restart_disabled(client, fake):
 
 def test_reopen_empty_repairs_pre_fix_zero_winner_giveaways(client, fake):
     """Simulates what a pre-fix build left behind: `drawn_at` set, no winner,
-    `restart_if_unclaimed` on - `gq admin reopen-empty` (services.ended_without_winners
+    `auto_extend` on - `gq admin reopen-empty` (services.ended_without_winners
     + reopen_giveaway) is the one-off repair for exactly this shape."""
     login_as(client, make_user("host@example.social"))
     slug = create_giveaway(client, hours="48")
@@ -314,6 +320,7 @@ def test_pre_draw_edit_changes_winner_count(client, fake):
             "conditions": "",
             "listed": "on",
             "restart_if_unclaimed": "on",
+            "auto_extend": "on",
             "_csrf_token": csrf(client, f"/{slug}/edit"),
         },
         follow_redirects=False,
@@ -353,8 +360,9 @@ def test_post_draw_edit_changes_one_seat_only(client, fake):
 
 
 def test_schema_migrates_old_single_winner_giveaways_into_winners_table(tmp_path):
-    # Hand-build a pre-v5 `giveaways` table (no restart_if_unclaimed/winner_count/
-    # winners table yet) so init_db() has to run the v5 *and* v6 migrations.
+    # Hand-build a pre-v5 `giveaways` table (no restart_if_unclaimed/auto_extend/
+    # winner_count/winners table yet) so init_db() has to run the v5, v6 *and*
+    # v7 migrations.
     path = tmp_path / "old.sqlite3"
     conn = sqlite3.connect(path)
     conn.executescript(
@@ -399,6 +407,7 @@ def test_schema_migrates_old_single_winner_giveaways_into_winners_table(tmp_path
     g = conn.execute("SELECT * FROM giveaways WHERE slug = 'a-b-c'").fetchone()
     assert g["winner_count"] == 1
     assert g["restart_if_unclaimed"] == 1
+    assert g["auto_extend"] == 1
     assert "reward" not in g.keys() and "winner_id" not in g.keys()
 
     w = conn.execute("SELECT * FROM winners WHERE giveaway_id = ?", (g["id"],)).fetchone()

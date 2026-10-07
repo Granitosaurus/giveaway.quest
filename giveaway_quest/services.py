@@ -32,6 +32,13 @@ MAX_WINNERS = 10  # seats/rewards per giveaway; site is low-volume, bump if ever
 # reopened if nobody is left. Only applies when `restart_if_unclaimed` is set.
 CLAIM_WINDOW = timedelta(days=2)
 
+# How far `ends_at` is pushed out each time a giveaway reopens for fresh entries -
+# either nobody entered at all (`auto_extend`) or a winner no-showed and nobody
+# eligible was left to re-draw to (`restart_if_unclaimed`). Fixed, not tied to the
+# giveaway's own duration, so a long-running giveaway doesn't restart for another
+# full run just because its first pass drew nobody.
+REOPEN_EXTEND = timedelta(hours=24)
+
 # Host-written prose (quest instructions, the reward blurb): a restricted CommonMark
 # subset. No images or raw HTML - markdown-it-py already refuses dangerous link
 # schemes (javascript:, etc.) at render time, and nh3 strips anything outside the
@@ -412,6 +419,7 @@ class GiveawayForm:
     min_account_age_days: int
     listed: bool
     restart_if_unclaimed: bool
+    auto_extend: bool
     hours: int
 
     @classmethod
@@ -436,6 +444,7 @@ class GiveawayForm:
             min_account_age_days=min_age,
             listed=data.get("listed") == "on",
             restart_if_unclaimed=data.get("restart_if_unclaimed") == "on",
+            auto_extend=data.get("auto_extend") == "on",
             hours=parse_hours(data.get("hours")),
         )
 
@@ -472,9 +481,9 @@ def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -
     cur = conn.execute(
         """INSERT INTO giveaways (slug, owner_id, title, conditions, quest,
                                   allowed_instances, min_account_age_days, listed,
-                                  restart_if_unclaimed, duration_hours, winner_count,
-                                  created_at, ends_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                                  restart_if_unclaimed, auto_extend, duration_hours,
+                                  winner_count, created_at, ends_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (
             slug,
             owner["id"],
@@ -485,6 +494,7 @@ def create_giveaway(conn: sqlite3.Connection, owner: dict, form: GiveawayForm) -
             form.min_account_age_days,
             int(form.listed),
             int(form.restart_if_unclaimed),
+            int(form.auto_extend),
             form.hours,
             len(form.rewards),
             db.iso(now),
@@ -578,6 +588,7 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
     quest = _clean_text(data.get("quest"), TEXT_MAX, name="Quest")
     listed = data.get("listed") == "on"
     restart_if_unclaimed = data.get("restart_if_unclaimed") == "on"
+    auto_extend = data.get("auto_extend") == "on"
     ends_at = giveaway["ends_at"]
     if data.get("hours", "").strip():
         hours = parse_hours(data.get("hours"), name="Ends in")
@@ -594,13 +605,14 @@ def update_giveaway(conn: sqlite3.Connection, giveaway: dict, data: dict[str, st
     conn.execute(
         """UPDATE giveaways
              SET conditions = ?, quest = ?, listed = ?, restart_if_unclaimed = ?,
-                 ends_at = ?, post_url = ?, post_id = ?, winner_count = ?
+                 auto_extend = ?, ends_at = ?, post_url = ?, post_id = ?, winner_count = ?
            WHERE id = ?""",
         (
             conditions,
             quest,
             int(listed),
             int(restart_if_unclaimed),
+            int(auto_extend),
             ends_at,
             post_url or None,
             post_id,
@@ -824,13 +836,13 @@ def draw(conn: sqlite3.Connection, giveaway: dict) -> list[dict]:
     to fill all of them. Returns the seats newly filled.
 
     If *no* entrant at all was eligible (nobody entered, or everybody who did
-    already holds another seat) and `restart_if_unclaimed` is set, the giveaway
-    is reopened for fresh entries instead of being marked ended with zero
-    winners, the same way an unclaimed seat reopens it in `_restart_unclaimed`:
-    `ends_at` is pushed out and `drawn_at` stays null, so `due_giveaways` picks
-    it back up and this keeps happening indefinitely until someone actually
-    wins a seat. A giveaway that manages to fill at least one seat still ends
-    normally even with other seats left empty - only a total no-show restarts.
+    already holds another seat) and `auto_extend` is set, the giveaway is
+    reopened for fresh entries instead of being marked ended with zero
+    winners: `ends_at` is pushed out by `REOPEN_EXTEND` and `drawn_at` stays
+    null, so `due_giveaways` picks it back up and this keeps happening
+    indefinitely until someone actually wins a seat. A giveaway that manages
+    to fill at least one seat still ends normally even with other seats left
+    empty - only a total no-show restarts.
     """
     now = db.now()
     open_seats = conn.execute(
@@ -846,10 +858,10 @@ def draw(conn: sqlite3.Connection, giveaway: dict) -> list[dict]:
             (winner["id"], db.iso(now), db.iso(now + CLAIM_WINDOW), seat["id"]),
         )
         filled_ids.append(seat["id"])
-    if not filled_ids and open_seats and giveaway["restart_if_unclaimed"]:
+    if not filled_ids and open_seats and giveaway["auto_extend"]:
         conn.execute(
             "UPDATE giveaways SET ends_at = ? WHERE id = ?",
-            (db.iso(now + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
+            (db.iso(now + REOPEN_EXTEND), giveaway["id"]),
         )
         log.info("%s: no eligible entrants at the deadline, reopened", giveaway["slug"])
     else:
@@ -967,17 +979,6 @@ def claim_reward(conn: sqlite3.Connection, giveaway: dict, user: dict) -> dict:
     return get_giveaway(conn, giveaway["slug"])
 
 
-def _reopen_hours(giveaway: dict) -> int:
-    """Run length to reuse when reopening: the stored duration, else derived from
-    the original created_at .. ends_at span (for pre-v5 giveaways)."""
-    if giveaway["duration_hours"]:
-        return int(giveaway["duration_hours"])
-    start, end = db.parse_iso(giveaway["created_at"]), db.parse_iso(giveaway["ends_at"])
-    if start and end:
-        return max(1, round((end - start).total_seconds() / 3600))
-    return 72
-
-
 def _get_giveaway_by_id(conn: sqlite3.Connection, giveaway_id: int) -> dict | None:
     return conn.execute(GIVEAWAY_SELECT + " WHERE g.id = ?", (giveaway_id,)).fetchone()
 
@@ -1017,7 +1018,7 @@ def _restart_unclaimed(conn: sqlite3.Connection, giveaway: dict, winner: dict) -
         return "redrawn"
     conn.execute(
         "UPDATE giveaways SET drawn_at = NULL, ends_at = ? WHERE id = ?",
-        (db.iso(now + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
+        (db.iso(now + REOPEN_EXTEND), giveaway["id"]),
     )
     return "reopened"
 
@@ -1054,15 +1055,15 @@ def process_unclaimed() -> list[str]:
 
 
 def ended_without_winners(conn: sqlite3.Connection) -> list[dict]:
-    """Ended giveaways that filled zero seats even though `restart_if_unclaimed`
-    was set - the ones a pre-fix build of `draw()` ended for good instead of
+    """Ended giveaways that filled zero seats even though `auto_extend` was
+    set - the ones a pre-fix build of `draw()` ended for good instead of
     reopening (see its docstring). One-off repair target for `gq admin
     reopen-empty`; going forward `draw()` reopens these itself, so this list
     should only ever contain giveaways that ended before the fix shipped.
     """
     return conn.execute(
         GIVEAWAY_SELECT
-        + """ WHERE g.drawn_at IS NOT NULL AND g.restart_if_unclaimed = 1
+        + """ WHERE g.drawn_at IS NOT NULL AND g.auto_extend = 1
                 AND NOT EXISTS (
                     SELECT 1 FROM winners w WHERE w.giveaway_id = g.id AND w.user_id IS NOT NULL
                 )
@@ -1071,10 +1072,10 @@ def ended_without_winners(conn: sqlite3.Connection) -> list[dict]:
 
 
 def reopen_giveaway(conn: sqlite3.Connection, giveaway: dict) -> None:
-    """Clear `drawn_at` and push `ends_at` out by `_reopen_hours`, same as the
+    """Clear `drawn_at` and push `ends_at` out by `REOPEN_EXTEND`, same as the
     zero-entrant reopen `draw()` now does on its own. Used to repair giveaways
     from `ended_without_winners` (`gq admin reopen-empty`)."""
     conn.execute(
         "UPDATE giveaways SET drawn_at = NULL, ends_at = ? WHERE id = ?",
-        (db.iso(db.now() + timedelta(hours=_reopen_hours(giveaway))), giveaway["id"]),
+        (db.iso(db.now() + REOPEN_EXTEND), giveaway["id"]),
     )

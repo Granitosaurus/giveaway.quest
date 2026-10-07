@@ -87,7 +87,7 @@ def new_form(request: Request, user: NamedDependency[dict]) -> Template:
         request,
         "new.html.jinja",
         user=user,
-        form={"hours": 72, "listed": "on", "restart_if_unclaimed": "on"},
+        form={"hours": 72, "listed": "on", "restart_if_unclaimed": "on", "auto_extend": "on"},
         rewards=[],
         count=1,
         max_winners=services.MAX_WINNERS,
