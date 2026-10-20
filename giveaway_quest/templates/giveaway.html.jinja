@@ -108,11 +108,14 @@ g.owner_acct }}{% endblock %} {% block head %}
                     class="rounded-box bg-primary/10 border border-primary/20 p-4"
                 >
                     <div
-                        class="flex items-center gap-1.5 text-xs uppercase tracking-wide text-primary font-semibold mb-1"
+                        class="flex items-center gap-1.5 text-xs uppercase tracking-wide text-primary font-semibold"
                     >
                         {{ quest_marker('available', 'w-4 h-4 drop-shadow-sm')
                         }} Your Quest
                     </div>
+                    <p class="text-xs italic text-base-content/60 mb-2">
+                        Entirely optional, but fun
+                    </p>
                     <div class="quest-md">
                         {{ g.quest | markdown | safe }}
                     </div>
@@ -352,6 +355,12 @@ g.owner_acct }}{% endblock %} {% block head %}
             <div class="card-body gap-3">
                 {% if not user %}
                 <h2 class="card-title text-base">Want in?</h2>
+                {% if g.quest %}
+                <p class="text-sm -mt-2 text-base-content/60">
+                    The quest is just for inspiration — you can enter
+                    without doing it.
+                </p>
+                {% endif %}
                 <p class="text-sm text-base-content/70">
                     Winner chosen randomly. Log in with your Mastodon account to enter - 
 		    we only read your handle to prove you're not a bot.
@@ -395,8 +404,7 @@ g.owner_acct }}{% endblock %} {% block head %}
                             required
                         />
                         <span
-                            >I've read the conditions{% if g.quest %} and I'll
-                            do the quest{% endif %}. I can actually use this
+                            >I've read the conditions. I can actually use this
                             reward.</span
                         >
                     </label>
