@@ -16,7 +16,8 @@ services:
       - "8000"
 
   cloudflared:
-    image: docker.io/cloudflare/cloudflared:latest
+    # Pinned by digest (it holds the tunnel token); Renovate opens PRs to bump it.
+    image: docker.io/cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     restart: unless-stopped
     command: tunnel run
     environment:

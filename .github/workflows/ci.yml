@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly, so newly published CVEs surface even when nothing is pushed.
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
+
+# Read-only token; no job here needs to write to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.22"
+          python-version: "3.13"
+      - run: uv sync --locked
+      - run: uvx ruff@0.16.10 check .
+      - run: uvx ruff@0.16.10 format --check .
+      - run: uv run pytest -W error::DeprecationWarning
+
+  audit:
+    # Known CVEs in the locked Python dependencies (PyPI advisory DB + OSV).
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.22"
+      - run: uv export --locked --no-dev --no-emit-project --format requirements-txt -o requirements.txt
+      - run: uvx pip-audit@2.10.1 --strict --disable-pip -r requirements.txt
+
+  image:
+    # Builds the production image (which also checks every pinned download's
+    # sha256) and scans its OS packages + Python deps with Trivy.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: docker build -t giveaway-quest:ci .
+      - name: trivy
+        run: >-
+          docker run --rm
+          -v /var/run/docker.sock:/var/run/docker.sock
+          docker.io/aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+          image --exit-code 1 --ignore-unfixed --severity HIGH,CRITICAL
+          giveaway-quest:ci

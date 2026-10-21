@@ -297,8 +297,13 @@ write access here. `services.get_comments(giveaway)`:
   local plugin file: `assets/app.css` has `@plugin "./vendor/daisyui.mjs"`.
   The flake fetches `daisyui.mjs`/`daisyui-theme.mjs` from the daisyUI GitHub
   release and symlinks them into `assets/vendor/` (git-ignored) inside
-  `build-css`. No node_modules anywhere. Bump `daisyuiVersion` + hashes in
-  `flake.nix` to upgrade.
+  `build-css`. No node_modules anywhere. The Dockerfile downloads the same
+  files (plus the Tailwind binary) and checks them against pinned sha256
+  `ARG`s. To upgrade, bump `daisyuiVersion` (flake.nix) / `DAISYUI_VERSION`
+  and `TAILWIND_VERSION` (Dockerfile) -- Renovate does this -- then run
+  `uv run invoke update-asset-hashes` and review the diff. Tailwind in the
+  dev shell comes from nixpkgs (`flake.lock`), so the Dockerfile's pinned
+  version can drift a little from it.
 - `@source "../giveaway_quest/templates"` tells Tailwind where to scan for
   classes. Built output `giveaway_quest/static/app.css` is git-ignored;
   `dev` and deployments build it.
@@ -412,6 +417,31 @@ write access here. `services.get_comments(giveaway)`:
   were taken. Visual checks were done by binding the dev server to the
   Tailscale IP (`gq serve --host <tailnet-ip>`) and opening it on a phone.
   Remember to set `GQ_BASE_URL` to the same host so OAuth redirects work.
+
+## Supply chain / dependency security
+
+- **Everything is pinned.** Python deps by `uv.lock` (hashes; the image uses
+  `uv sync --locked`, so a stale lock fails the build instead of silently
+  re-resolving), base images and `cloudflared` by digest, Tailwind/daisyUI
+  downloads by sha256, GitHub Actions by commit SHA, CI tools (`uvx
+  ruff@…`, `pip-audit@…`, Trivy image) by version/digest.
+- **Renovate** (`renovate.json`) keeps all of that current: weekly PRs, with
+  a 7-day `minimumReleaseAge` so a freshly published malicious release is
+  usually yanked before we'd pick it up. Vulnerability fixes skip the
+  cooldown and the schedule. Also enabled: Nix (`flake.lock` via lock-file
+  maintenance) and pre-commit. The `needs-hashes` PRs (Tailwind/daisyUI) fail
+  the image build until `invoke update-asset-hashes` is run on the branch --
+  Renovate can't compute checksums.
+- **CI** (`.github/workflows/ci.yml`, also weekly on a schedule so new CVEs
+  surface without a push): tests + ruff; `pip-audit` on the exported lock;
+  image build + Trivy (HIGH/CRITICAL with a fix available fails the job).
+  The workflow token is read-only. Trivy runs from its pinned image rather
+  than `aquasecurity/trivy-action`.
+- The runtime image has **no pip** (uv is copied in from its pinned image).
+  The base image's pip vendors its own certifi/urllib3/msgpack, which lagged
+  behind and were the only things Trivy flagged in the first scan.
+- When reviewing update PRs, read the lockfile diff: a new transitive
+  dependency nobody asked for is the thing to look twice at.
 
 ## Testing
 

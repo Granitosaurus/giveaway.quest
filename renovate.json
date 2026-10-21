@@ -1,0 +1,125 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "prConcurrentLimit": 5,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  },
+  "vulnerabilityAlerts": {
+    "minimumReleaseAge": null,
+    "schedule": [
+      "at any time"
+    ],
+    "labels": [
+      "security"
+    ]
+  },
+  "osvVulnerabilityAlerts": true,
+  "nix": {
+    "enabled": true
+  },
+  "pre-commit": {
+    "enabled": true
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Versions in Dockerfile ARGs marked with a `# renovate:` comment",
+      "managerFilePatterns": [
+        "/(^|/)Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\nARG \\w+_VERSION=(?<currentValue>\\S+)"
+      ]
+    },
+    {
+      "customType": "regex",
+      "description": "daisyUI version in flake.nix",
+      "managerFilePatterns": [
+        "/(^|/)flake\\.nix$/"
+      ],
+      "matchStrings": [
+        "daisyuiVersion = \"(?<currentValue>[^\"]+)\";"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "saadeghi/daisyui",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "Tool versions pinned in CI: `uvx <pkg>@<ver>` and setup-uv's uv version",
+      "managerFilePatterns": [
+        "/^\\.github/workflows/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "uvx (?<depName>[A-Za-z0-9_.-]+)@(?<currentValue>[0-9][^\\s]*)",
+        "setup-uv@[^\\n]+\\n\\s+with:\\n\\s+version: \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "pypi",
+      "depNameTemplate": "{{#if depName}}{{depName}}{{else}}uv{{/if}}"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Keep pyproject ranges, bump uv.lock; one PR for all non-major Python updates",
+      "matchManagers": [
+        "pep621"
+      ],
+      "rangeStrategy": "update-lockfile"
+    },
+    {
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "python dependencies (non-major)"
+    },
+    {
+      "description": "Dockerfile ARG for daisyUI has no leading v",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchFileNames": [
+        "Dockerfile"
+      ],
+      "matchDepNames": [
+        "saadeghi/daisyui"
+      ],
+      "extractVersion": "^v(?<version>.+)$"
+    },
+    {
+      "description": "Downloaded CSS tooling: Renovate can't recompute the pinned checksums",
+      "matchDepNames": [
+        "tailwindlabs/tailwindcss",
+        "saadeghi/daisyui"
+      ],
+      "groupName": "css tooling",
+      "labels": [
+        "needs-hashes"
+      ],
+      "prBodyNotes": [
+        "⚠️ Checksums are not updated by Renovate. Check out this branch, run `uv run invoke update-asset-hashes`, review the diff and push — the image build fails until you do."
+      ]
+    },
+    {
+      "matchManagers": [
+        "github-actions"
+      ],
+      "pinDigests": true
+    }
+  ]
+}

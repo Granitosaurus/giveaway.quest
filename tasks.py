@@ -8,6 +8,8 @@ The `gq` CLI (giveaway_quest/cli.py) is the separate, in-container app CLI.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import os
 import re
 import shlex
@@ -253,3 +255,63 @@ def backup(c):
         remote = os.environ.get("BACKUP_RCLONE_REMOTE")
         if remote:
             c.run(f"podman unshare rclone sync data/backups {shlex.quote(remote)} --quiet")
+
+
+DOCKERFILE = ROOT / "Dockerfile"
+FLAKE_NIX = ROOT / "flake.nix"
+_TAILWIND_URL = (
+    "https://github.com/tailwindlabs/tailwindcss/releases/download/{version}/tailwindcss-{arch}"
+)
+_DAISYUI_URL = "https://github.com/saadeghi/daisyui/releases/download/v{version}/{name}"
+
+
+def _sha256(url: str) -> bytes:
+    resp = httpx.get(url, follow_redirects=True, timeout=60)
+    resp.raise_for_status()
+    return hashlib.sha256(resp.content).digest()
+
+
+def _set_dockerfile_arg(text: str, name: str, value: str) -> str:
+    text, count = re.subn(rf"^ARG {name}=\S+$", f"ARG {name}={value}", text, flags=re.M)
+    if count != 1:
+        raise SystemExit(f"could not find ARG {name} in {DOCKERFILE}")
+    return text
+
+
+@task
+def update_asset_hashes(c):
+    """Recompute the pinned sha256s of the Tailwind/daisyUI downloads.
+
+    Renovate bumps TAILWIND_VERSION/DAISYUI_VERSION (Dockerfile) and
+    daisyuiVersion (flake.nix) but can't recompute checksums, so the image
+    build fails on those PRs until this is run on the branch. It trusts
+    whatever the release currently serves -- review the diff before pushing.
+    """
+    dockerfile = DOCKERFILE.read_text()
+    tailwind = re.search(r"^ARG TAILWIND_VERSION=(\S+)$", dockerfile, re.M).group(1)
+    daisyui = re.search(r"^ARG DAISYUI_VERSION=(\S+)$", dockerfile, re.M).group(1)
+    flake = FLAKE_NIX.read_text()
+    flake_daisyui = re.search(r'daisyuiVersion = "([^"]+)";', flake).group(1)
+    if flake_daisyui != daisyui:
+        raise SystemExit(f"daisyUI differs: Dockerfile {daisyui}, flake.nix {flake_daisyui}")
+
+    for arg, arch in (
+        ("TAILWIND_SHA256_AMD64", "linux-x64"),
+        ("TAILWIND_SHA256_ARM64", "linux-arm64"),
+    ):
+        digest = _sha256(_TAILWIND_URL.format(version=tailwind, arch=arch))
+        dockerfile = _set_dockerfile_arg(dockerfile, arg, digest.hex())
+    for arg, name in (
+        ("DAISYUI_SHA256", "daisyui.mjs"),
+        ("DAISYUI_THEME_SHA256", "daisyui-theme.mjs"),
+    ):
+        digest = _sha256(_DAISYUI_URL.format(version=daisyui, name=name))
+        dockerfile = _set_dockerfile_arg(dockerfile, arg, digest.hex())
+        sri = "sha256-" + base64.b64encode(digest).decode()
+        flake, count = re.subn(rf'(/{re.escape(name)}";\s*hash = )"[^"]+"', rf'\g<1>"{sri}"', flake)
+        if count != 1:
+            raise SystemExit(f"could not find the {name} hash in {FLAKE_NIX}")
+
+    DOCKERFILE.write_text(dockerfile)
+    FLAKE_NIX.write_text(flake)
+    print(f"hashes updated for tailwind {tailwind}, daisyUI {daisyui} -- review `git diff`")
