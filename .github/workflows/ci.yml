@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.12.22"
+          version: "0.13.4"
           python-version: "3.13"
       - run: uv sync --locked
       - run: uvx ruff@0.16.10 check .
@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.12.22"
+          version: "0.13.4"
       - run: uv export --locked --no-dev --no-emit-project --format requirements-txt -o requirements.txt
       - run: uvx pip-audit@2.10.1 --strict --disable-pip -r requirements.txt
 
