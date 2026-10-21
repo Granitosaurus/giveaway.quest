@@ -120,6 +120,14 @@
         "github-actions"
       ],
       "pinDigests": true
+    },
+    {
+      "description": "uv is pinned in CI (pypi) and the Dockerfile (ghcr image); move them together so a security bump never fixes only one",
+      "matchDepNames": [
+        "uv",
+        "ghcr.io/astral-sh/uv"
+      ],
+      "groupName": "uv"
     }
   ]
 }

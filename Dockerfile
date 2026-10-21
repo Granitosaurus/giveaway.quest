@@ -46,7 +46,7 @@ RUN set -eux; \
 
 # ---- Python runtime ----
 FROM python:3.13-slim@sha256:98ce6fb13b3803744fbca11434f00818f1e300e4e48a4f204e07b2c928b6218e AS runtime
-COPY --from=ghcr.io/astral-sh/uv:0.12.22@sha256:f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /usr/local/bin/uv
 # uv does all installing, so drop the base image's pip (and ensurepip's spare
 # wheel): its vendored certifi/urllib3/msgpack lag behind and are what Trivy
 # kept flagging, while nothing at runtime uses them.
