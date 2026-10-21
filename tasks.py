@@ -62,6 +62,9 @@ def redeploy(c, version=None):
     because its image changed, so `up -d --build` alone is not enough --
     --force-recreate is required, or the old code keeps serving silently.
 
+    cloudflared is recreated too, but only when docker-compose.yml pins a
+    different image than it's running (see `_sync_cloudflared`).
+
     `version` is passed into the container as GQ_VERSION, shown in the footer
     (and the static-asset cache-busting query string) so you can actually tell
     a redeploy took effect. Defaults to `git describe`, so even a redeploy
@@ -75,8 +78,42 @@ def redeploy(c, version=None):
         version = version.removeprefix("v")
         c.run(f"{PODMAN_COMPOSE} build app")
         c.run(f"{PODMAN_COMPOSE} up -d --force-recreate app", env={"GQ_VERSION": version})
+        _sync_cloudflared(c)
         c.run("podman image prune -f")
     print(f"deployed {version}")
+
+
+CLOUDFLARED_CONTAINER = "giveaway-quest_cloudflared_1"
+
+
+def _image_ref_key(ref: str) -> str:
+    """What to compare an image reference by: its digest when pinned
+    (podman records `repo@sha256:...` and drops the tag), else the whole ref."""
+    return ref.rsplit("@", 1)[1] if "@" in ref else ref
+
+
+def _sync_cloudflared(c) -> None:
+    """Recreate cloudflared only if docker-compose.yml now pins a different
+    image than the running container uses (e.g. a merged Renovate bump).
+
+    Same podman-compose limitation as `app`: `up -d` alone never moves a
+    running container to a new image. Skipped when unchanged so a routine
+    redeploy doesn't drop the tunnel.
+    """
+    compose = (ROOT / "docker-compose.yml").read_text()
+    match = re.search(r"^\s*image:\s*(\S*/cloudflared[:@]\S*)\s*$", compose, re.M)
+    if not match:
+        raise SystemExit("could not find the cloudflared image in docker-compose.yml")
+    wanted = match.group(1)
+    running = c.run(
+        f"podman inspect --format '{{{{.ImageName}}}}' {CLOUDFLARED_CONTAINER}",
+        hide=True,
+        warn=True,
+    )
+    if running.ok and _image_ref_key(running.stdout.strip()) == _image_ref_key(wanted):
+        return
+    print(f"cloudflared -> {wanted}")
+    c.run(f"{PODMAN_COMPOSE} up -d --force-recreate cloudflared")
 
 
 def _read_version(path: Path, pattern: str) -> tuple[int, int, int]:
