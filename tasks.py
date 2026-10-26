@@ -56,39 +56,42 @@ def down(c):
 
 @task
 def restart(c):
-    """Restart the containers on the current image (no rebuild)."""
-    down(c)
-    up(c)
+    """Recreate the containers on the current image (no rebuild), through the
+    compose unit so they stay owned by it (see `_build_and_restart`)."""
+    c.run(f"systemctl --user restart {COMPOSE_UNIT}")
 
 
 @task
-def redeploy(c, version=None):
-    """Rebuild the app image from the current checkout and force the app
-    container onto it. No git changes -- production updates by release tag
-    via `deploy`; this is for rebuilding what's already checked out.
-
-    podman-compose does not recreate an already-running container just
-    because its image changed, so `up -d --build` alone is not enough --
-    --force-recreate is required, or the old code keeps serving silently.
-
-    cloudflared is recreated too, but only when docker-compose.yml pins a
-    different image than it's running (see `_sync_cloudflared`).
-
-    `version` is passed into the container as GQ_VERSION, shown in the footer
-    (and the static-asset cache-busting query string) so you can actually tell
-    a redeploy took effect. Defaults to `git describe`.
+def redeploy(c):
+    """Rebuild the app image from the current checkout and restart onto it.
+    No git changes -- production updates by release tag via `deploy`; this is
+    for rebuilding what's already checked out.
     """
     with c.cd(str(ROOT)):
-        _build_and_restart(c, version or _checkout_version(c))
+        _build_and_restart(c)
 
 
-def _build_and_restart(c, version: str) -> None:
-    version = version.removeprefix("v")
+COMPOSE_UNIT = "giveaway-quest-compose.service"
+
+
+def _build_and_restart(c) -> None:
+    """Build the app image, then recreate the containers by restarting the
+    compose unit -- never with `podman-compose up` from here.
+
+    A container's conmon (its monitor process) stays in the cgroup of
+    whatever started it. Started from `deploy`, that's the oneshot
+    giveaway-quest-deploy.service, and systemd kills the conmon when that
+    unit finishes -- the app keeps serving but podman loses its exit status
+    and logs. The compose unit (RemainAfterExit) is where boot puts them
+    anyway. Its `down`+`up` recreates every container from
+    docker-compose.yml, so a new app image or a Renovate cloudflared bump is
+    always picked up (plain `up -d` never moves a running container to a new
+    image), and `up` sets GQ_VERSION from the checkout -- the release tag.
+    """
     c.run(f"{PODMAN_COMPOSE} build app")
-    c.run(f"{PODMAN_COMPOSE} up -d --force-recreate app", env={"GQ_VERSION": version})
-    _sync_cloudflared(c)
+    c.run(f"systemctl --user restart {COMPOSE_UNIT}")
     c.run("podman image prune -f")
-    print(f"deployed {version}")
+    print(f"deployed {_checkout_version(c)}")
 
 
 APP_CONTAINER = "giveaway-quest_app_1"
@@ -138,40 +141,7 @@ def deploy(c, force=False):
         if c.run("git status --porcelain --untracked-files=no", hide=True).stdout.strip():
             raise SystemExit("production checkout has local changes -- not checking out over them")
         c.run(f"git checkout --quiet --detach {tag}")
-        _build_and_restart(c, tag)
-
-
-CLOUDFLARED_CONTAINER = "giveaway-quest_cloudflared_1"
-
-
-def _image_ref_key(ref: str) -> str:
-    """What to compare an image reference by: its digest when pinned
-    (podman records `repo@sha256:...` and drops the tag), else the whole ref."""
-    return ref.rsplit("@", 1)[1] if "@" in ref else ref
-
-
-def _sync_cloudflared(c) -> None:
-    """Recreate cloudflared only if docker-compose.yml now pins a different
-    image than the running container uses (e.g. a merged Renovate bump).
-
-    Same podman-compose limitation as `app`: `up -d` alone never moves a
-    running container to a new image. Skipped when unchanged so a routine
-    redeploy doesn't drop the tunnel.
-    """
-    compose = (ROOT / "docker-compose.yml").read_text()
-    match = re.search(r"^\s*image:\s*(\S*/cloudflared[:@]\S*)\s*$", compose, re.M)
-    if not match:
-        raise SystemExit("could not find the cloudflared image in docker-compose.yml")
-    wanted = match.group(1)
-    running = c.run(
-        f"podman inspect --format '{{{{.ImageName}}}}' {CLOUDFLARED_CONTAINER}",
-        hide=True,
-        warn=True,
-    )
-    if running.ok and _image_ref_key(running.stdout.strip()) == _image_ref_key(wanted):
-        return
-    print(f"cloudflared -> {wanted}")
-    c.run(f"{PODMAN_COMPOSE} up -d --force-recreate cloudflared")
+        _build_and_restart(c)
 
 
 def _read_version(path: Path, pattern: str) -> tuple[int, int, int]:
