@@ -1,0 +1,54 @@
+name: release
+
+# "Run workflow" button (Actions tab, or the GitHub mobile app): runs the
+# same `invoke release` as a local release -- bump version, tag, push, GitHub
+# release from NEW.md. Production (stork) picks the tag up within 5 minutes
+# via giveaway-quest-deploy.timer; nothing here can reach the server.
+#
+# Only the repo owner and the RELEASE_DEPLOY_KEY deploy key may bypass the
+# rulesets on main and v* tags (GITHUB_TOKEN can't be a bypass actor), so
+# the push uses that key. It's a secret of the `release` environment, which
+# only the main branch can use -- a workflow run from any other branch
+# can't read it, and the sandboxed agent's token has no Workflows permission
+# to change this file.
+on:
+  workflow_dispatch:
+    inputs:
+      part:
+        description: Version part to bump
+        required: true
+        type: choice
+        options: [patch, minor, major]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags, for the version bump and `git describe`
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }} # pushes as the bypass deploy key
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: "0.12.22"
+          python-version: "3.13"
+      - run: uv sync --locked
+      - run: uv run pytest -W error::DeprecationWarning
+      - name: release
+        env:
+          PART: ${{ inputs.part }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }} # creating the release itself isn't ruleset-gated
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git branch --set-upstream-to=origin/main
+          uv run invoke release "$PART"
