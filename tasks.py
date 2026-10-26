@@ -121,7 +121,11 @@ def deploy(c, force=False):
     so a sandboxed agent (or anyone else) with a PR-only token can't ship.
     """
     with c.cd(str(ROOT)):
-        c.run("git fetch --quiet --tags origin main")
+        # --force: production's tags mirror GitHub's (where v* tags can't be
+        # moved, see the ruleset), so a stale local tag -- e.g. left from
+        # before a history rewrite -- must not block every future deploy.
+        # Not --quiet, so a fetch failure says why in the journal.
+        c.run("git fetch --force --tags origin main")
         tags = c.run("git tag --list 'v*' --sort=-v:refname", hide=True).stdout.split()
         tag = tags[0] if tags else None
         if not tag:
