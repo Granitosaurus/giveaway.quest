@@ -10,6 +10,7 @@ result
 data/
 dev-backup-*/
 .env
+cloudflared.env
 security-review-*.md
 assets/vendor/
 giveaway_quest/static/app.css

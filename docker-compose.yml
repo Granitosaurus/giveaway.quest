@@ -20,8 +20,11 @@ services:
     image: docker.io/cloudflare/cloudflared:2026.10.0@sha256:9b49eed8f62806d5d45ddf59ecefb5710429598ea6d3fcccd2af938f621b2b07
     restart: unless-stopped
     command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
+    # Its own env file, not .env: `app` gets every .env variable (env_file),
+    # and whoever holds the tunnel token can run a connector for this tunnel
+    # -- i.e. sit in the path of giveaway.quest's traffic. The public app
+    # never needs it.
+    env_file: cloudflared.env
     # Deliberately no `depends_on: [app]`: podman-compose turns that into
     # `podman create --requires=<app container>` on cloudflared, which makes
     # podman refuse to remove/recreate app while cloudflared exists ("has

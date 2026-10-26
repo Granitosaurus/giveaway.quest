@@ -153,11 +153,14 @@ same `docker-compose.yml` docker would use.
    the repo and holds no GitHub credentials (see "Releases and deploys").
 5. `cp .env.example .env` and edit it: `GQ_BASE_URL=https://giveaway.quest`,
    a real `GQ_SECRET_KEY` (`python3 -c 'import secrets;print(secrets.token_hex(32))'`),
-   the `CLOUDFLARE_TUNNEL_TOKEN` from step 2, plus `GQ_ANNOUNCE_*`/`GQ_ADMINS`
-   as needed. Leave `GQ_DATA_DIR` alone — compose sets it to `/data` inside
-   the container regardless.
-6. `chmod 600 .env` — it holds three secrets and nothing but you and
-   `podman-compose` (which runs as you) needs to read it.
+   plus `GQ_ANNOUNCE_*`/`GQ_ADMINS` as needed. Leave `GQ_DATA_DIR` alone —
+   compose sets it to `/data` inside the container regardless. Then
+   `cp cloudflared.env.example cloudflared.env` and put the tunnel token from
+   step 2 in it as `TUNNEL_TOKEN` — its own file because the app container
+   receives every `.env` variable and has no business holding the tunnel
+   token.
+6. `chmod 600 .env cloudflared.env` — they hold secrets and nothing but you
+   and `podman-compose` (which runs as you) needs to read them.
 7. `mkdir -p data && podman unshare chown -R 10001:10001 data && podman unshare chmod 700 data` — the app
    container runs as an unprivileged UID (10001); under rootless Podman that
    maps to a subordinate host UID, so `podman unshare` (not plain `chown`) is
