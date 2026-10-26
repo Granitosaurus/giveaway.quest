@@ -2,6 +2,7 @@
 __pycache__/
 *.pyc
 .env
+cloudflared.env
 data/
 dev-backup-*/
 assets/vendor/
