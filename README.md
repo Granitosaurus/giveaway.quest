@@ -122,7 +122,7 @@ by Jinja; there are no uploads.
 
 ## Deployment sketch
 
-Runs on homek14 (the always-on home NixOS box) behind [Cloudflare
+Runs on stork (an always-on home NixOS box) behind [Cloudflare
 Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/),
 not a VPS. Two containers, no inbound ports opened on the router at all: the
 app (built from the `Dockerfile`, non-root, only reachable on the compose
@@ -148,7 +148,9 @@ same `docker-compose.yml` docker would use.
    private-network/WARP routing, not this — it won't have a service/URL
    field. Add: Hostname `giveaway.quest`, Service `HTTP` -> `app:8000`; if it
    asks about an Access policy, pick the public/no-auth option.
-4. On homek14: `git clone … ~/projects/giveaway-quest && cd ~/projects/giveaway-quest`
+4. On stork: `git clone https://github.com/Granitosaurus/giveaway.quest.git ~/projects/giveaway-quest && cd ~/projects/giveaway-quest`
+   — over anonymous HTTPS on purpose: the production host only ever *reads*
+   the repo and holds no GitHub credentials (see "Releases and deploys").
 5. `cp .env.example .env` and edit it: `GQ_BASE_URL=https://giveaway.quest`,
    a real `GQ_SECRET_KEY` (`python3 -c 'import secrets;print(secrets.token_hex(32))'`),
    the `CLOUDFLARE_TUNNEL_TOKEN` from step 2, plus `GQ_ANNOUNCE_*`/`GQ_ADMINS`
@@ -170,13 +172,13 @@ same `docker-compose.yml` docker would use.
    not root, since these are rootless Podman containers:
    - `loginctl enable-linger dex` — lets your user's systemd instance keep
      running (and start at boot) without an active login session.
-   - `mkdir -p ~/.config/systemd/user && cp deploy/giveaway-quest-compose.service deploy/giveaway-quest-backup.{service,timer} ~/.config/systemd/user/`
+   - `mkdir -p ~/.config/systemd/user && cp deploy/giveaway-quest-compose.service deploy/giveaway-quest-{backup,deploy}.{service,timer} ~/.config/systemd/user/`
    - `systemctl --user daemon-reload`
-   - `systemctl --user enable --now giveaway-quest-compose.service giveaway-quest-backup.timer`
+   - `systemctl --user enable --now giveaway-quest-compose.service giveaway-quest-backup.timer giveaway-quest-deploy.timer`
 
 ## Maintaining it
 
-All host-side ops (start/stop/redeploy/backup) go through `tasks.py`
+All host-side ops (start/stop/deploy/backup) go through `tasks.py`
 ([invoke](https://www.pyinvoke.org/)) — run `uv run invoke -l` to list tasks,
 or open `tasks.py` to read what each one does. This is separate from `gq`
 (`giveaway_quest/cli.py`): `gq` is the app's own CLI and runs *inside* the
@@ -188,26 +190,31 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
 - **Logs**: `uv run invoke logs` (app) or `uv run invoke logs --service=cloudflared`
 - **Restart on the current image**: `uv run invoke restart`
 - **Stop everything**: `uv run invoke down`
-- **Ship new code**: `uv run invoke redeploy` — pulls, rebuilds the app
-  image, and force-recreates the app container. This one matters: plain
-  `podman-compose up -d --build` does *not* recreate an already-running
-  container just because its image changed, so the old code would keep
-  serving silently without the `--force-recreate` that `redeploy` does.
-  It also passes `GQ_VERSION` (from `git describe`) into the container, shown
-  in the footer, so you can tell at a glance whether a deploy actually landed
-  — no more wondering if `redeploy` pulled the commit you think it did.
-- **Cut a release**: `uv run invoke release major|minor|patch` — bumps the
-  version in `pyproject.toml`/`giveaway_quest/__init__.py`, commits, tags it
-  (`vX.Y.Z`), pushes the branch and tag, cuts a GitHub release from `NEW.md`,
-  then redeploys with that tag as `GQ_VERSION`. Refuses on a dirty tree or a
-  branch that isn't in sync with its upstream, since the tag is meant to be
-  trustworthy proof of what's deployed. Push your other commits first;
+- **Ship new code**: cut a release (below); production deploys release tags
+  only. `uv run invoke deploy` (run every 5 min by
+  `giveaway-quest-deploy.timer`) fetches tags, and if the newest `v*` tag is
+  on `main` and isn't what's running, checks it out and rebuilds. Rebuilding
+  force-recreates the app container — plain `podman-compose up -d --build`
+  does *not* recreate an already-running container just because its image
+  changed, so the old code would keep serving silently. `GQ_VERSION` (the tag)
+  goes into the container and the footer, so you can tell a deploy landed.
+- **Rebuild what's checked out** (no git changes): `uv run invoke redeploy`.
+- **Cut a release**: `uv run invoke release major|minor|patch` from a dev
+  checkout, or the **release** workflow's "Run workflow" button on GitHub
+  (works from the mobile app) — both bump the version in
+  `pyproject.toml`/`giveaway_quest/__init__.py`, commit, tag it (`vX.Y.Z`),
+  push the branch and tag, and cut a GitHub release from `NEW.md`. Production
+  picks the tag up within 5 minutes; a local release with `GQ_DEPLOY_HOST=stork`
+  in `.env` also kicks the deploy over ssh right away. Refuses on a dirty tree
+  or a branch that isn't in sync with its upstream, since the tag is meant to
+  be trustworthy proof of what's deployed. Push your other commits first;
   `release` only makes the version bump commit.
   Add a bullet to `NEW.md` per notable change as you work; `release` uses
   whatever's there as the GitHub release notes and empties the file back to
   its instructional comment. An empty `NEW.md` just skips the GitHub
   release — the tag is still cut and pushed.
-  The GitHub release itself needs a `GH_TOKEN` in `.env`: a
+  The GitHub release itself needs a `GH_TOKEN` (the workflow uses its own
+  `GITHUB_TOKEN`; locally, put one in `.env`): a
   [fine-grained personal access token](https://github.com/settings/personal-access-tokens)
   scoped to just this repo with "Contents: read and write" permission and
   nothing else — not the full-account access a plain `gh auth login` would
@@ -217,17 +224,18 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   shows the next scheduled hourly run.
 - **Run a `gq` command against the live container**: `uv run invoke gq "<command>"`,
   e.g. `uv run invoke gq "admin reopen-empty --yes"` or `uv run invoke gq "admin show <slug>"`.
-- The two systemd units (`giveaway-quest-compose.service`,
-  `giveaway-quest-backup.timer`) call `uv run invoke up`/`down`/`backup`
-  under the hood — reboots need no manual steps.
+- The systemd units (`giveaway-quest-compose.service`,
+  `giveaway-quest-backup.timer`, `giveaway-quest-deploy.timer`) call
+  `uv run invoke up`/`down`/`backup`/`deploy` under the hood — reboots need
+  no manual steps.
 
 Backups are consistent sqlite snapshots made with the backup API, so they
 are safe to copy off-site with rsync/rclone from `data/backups/`.
 
 ### Host firewall: containers can't reach the tailnet
 
-`/etc/nixos/configuration.nix` carries a `networking.firewall.extraCommands`
-block (`gq-rootless-egress` chain) that rejects traffic from *any* of dex's
+The host's NixOS config carries a `networking.firewall.extraCommands`
+block (`rootless-podman-egress` chain) that rejects traffic from *any* of dex's
 rootless Podman containers to loopback, RFC1918, the tailnet (`100.64.0.0/10`)
 and link-local ranges, with MagicDNS exempted. Without it the public app
 container could reach Windmill/CloakBrowser on the Tailscale IP. If a

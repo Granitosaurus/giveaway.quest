@@ -1,4 +1,4 @@
-"""Ops tasks for the homek14 deployment (rootless Podman + Cloudflare Tunnel).
+"""Ops tasks for the stork deployment (rootless Podman + Cloudflare Tunnel).
 
 Run `uv run invoke -l` to list tasks, `uv run invoke <task>` to run one.
 This is host-side tooling only -- it shells out to podman/git and is never
@@ -37,7 +37,14 @@ find data/backups/daily -name "giveaway-*.sqlite3" -mtime +30 -delete
 def up(c):
     """Start the app + cloudflared containers (idempotent)."""
     with c.cd(str(ROOT)):
-        c.run(f"{PODMAN_COMPOSE} up -d")
+        # GQ_VERSION too, or a boot-time `up` (giveaway-quest-compose.service)
+        # recreates the app with it blank and `deploy` can't tell what's running.
+        c.run(f"{PODMAN_COMPOSE} up -d", env={"GQ_VERSION": _checkout_version(c)})
+
+
+def _checkout_version(c) -> str:
+    version = c.run("git describe --tags --always --dirty", hide=True).stdout.strip()
+    return version.removeprefix("v")
 
 
 @task
@@ -56,7 +63,9 @@ def restart(c):
 
 @task
 def redeploy(c, version=None):
-    """Pull latest code, rebuild the app image, and force the app container onto it.
+    """Rebuild the app image from the current checkout and force the app
+    container onto it. No git changes -- production updates by release tag
+    via `deploy`; this is for rebuilding what's already checked out.
 
     podman-compose does not recreate an already-running container just
     because its image changed, so `up -d --build` alone is not enough --
@@ -67,20 +76,65 @@ def redeploy(c, version=None):
 
     `version` is passed into the container as GQ_VERSION, shown in the footer
     (and the static-asset cache-busting query string) so you can actually tell
-    a redeploy took effect. Defaults to `git describe`, so even a redeploy
-    between tagged releases is distinguishable; `release` passes the tag it
-    just made instead.
+    a redeploy took effect. Defaults to `git describe`.
     """
     with c.cd(str(ROOT)):
-        c.run("git pull")
-        if version is None:
-            version = c.run("git describe --tags --always --dirty", hide=True).stdout.strip()
-        version = version.removeprefix("v")
-        c.run(f"{PODMAN_COMPOSE} build app")
-        c.run(f"{PODMAN_COMPOSE} up -d --force-recreate app", env={"GQ_VERSION": version})
-        _sync_cloudflared(c)
-        c.run("podman image prune -f")
+        _build_and_restart(c, version or _checkout_version(c))
+
+
+def _build_and_restart(c, version: str) -> None:
+    version = version.removeprefix("v")
+    c.run(f"{PODMAN_COMPOSE} build app")
+    c.run(f"{PODMAN_COMPOSE} up -d --force-recreate app", env={"GQ_VERSION": version})
+    _sync_cloudflared(c)
+    c.run("podman image prune -f")
     print(f"deployed {version}")
+
+
+APP_CONTAINER = "giveaway-quest_app_1"
+
+
+def _running_version(c) -> str | None:
+    """GQ_VERSION of the live app container -- what's actually serving, which
+    can differ from the checkout if a build failed after checking out a tag."""
+    result = c.run(
+        "podman inspect --format '{{range .Config.Env}}{{println .}}{{end}}' " + APP_CONTAINER,
+        hide=True,
+        warn=True,
+    )
+    for line in result.stdout.splitlines() if result.ok else []:
+        if line.startswith("GQ_VERSION="):
+            return line.removeprefix("GQ_VERSION=")
+    return None
+
+
+@task
+def deploy(c, force=False):
+    """Deploy the newest release tag, if it isn't what's already running.
+
+    Production's only way to update: run every few minutes by
+    deploy/giveaway-quest-deploy.timer (as dex on stork), and kicked
+    immediately by `release` when GQ_DEPLOY_HOST is set. Fetches over the
+    anonymous HTTPS remote -- the production host holds no GitHub
+    credentials. Only tags whose commit is on origin/main are deployed, and
+    who may create `v*` tags / push `main` is restricted by GitHub rulesets,
+    so a sandboxed agent (or anyone else) with a PR-only token can't ship.
+    """
+    with c.cd(str(ROOT)):
+        c.run("git fetch --quiet --tags origin main")
+        tags = c.run("git tag --list 'v*' --sort=-v:refname", hide=True).stdout.split()
+        tag = tags[0] if tags else None
+        if not tag:
+            raise SystemExit("no v* release tags found")
+        if not c.run(f"git merge-base --is-ancestor {tag} origin/main", warn=True, hide=True).ok:
+            raise SystemExit(f"{tag} is not on origin/main -- refusing to deploy it")
+        if _running_version(c) == tag.removeprefix("v") and not force:
+            print(f"{tag} already running")
+            return
+        if c.run("git status --porcelain --untracked-files=no", hide=True).stdout.strip():
+            raise SystemExit("production checkout has local changes -- not checking out over them")
+        c.run(f"git checkout --quiet --detach {tag}")
+        _build_and_restart(c, tag)
 
 
 CLOUDFLARED_CONTAINER = "giveaway-quest_cloudflared_1"
@@ -188,8 +242,14 @@ def _create_github_release(c, tag: str, notes: str) -> None:
 
 @task
 def release(c, part):
-    """Bump the version (major|minor|patch), tag it, push, cut a GitHub release
-    from NEW.md, and redeploy with that tag.
+    """Bump the version (major|minor|patch), tag it, push, and cut a GitHub
+    release from NEW.md. Doesn't deploy: production picks the new tag up via
+    `deploy` (its timer), or immediately if GQ_DEPLOY_HOST is set, which
+    makes this trigger stork's deploy service over ssh.
+
+    Runs from a dev checkout (raven) or the `release` GitHub Actions
+    workflow -- never on the production host, which holds no GitHub
+    credentials.
 
     Refuses on a dirty working tree or a branch that isn't pushed, since the
     git tag is meant to be the source of truth for "what's actually deployed"
@@ -248,7 +308,12 @@ def release(c, part):
         else:
             print("NEW.md was empty -- tag pushed, no GitHub release created")
 
-    redeploy(c, version=tag)
+    deploy_host = os.environ.get("GQ_DEPLOY_HOST")
+    if deploy_host:
+        host = shlex.quote(deploy_host)
+        c.run(f"ssh {host} systemctl --user start giveaway-quest-deploy.service")
+    else:
+        print(f"pushed {tag} -- production deploys it within 5 min (giveaway-quest-deploy.timer)")
 
 
 @task

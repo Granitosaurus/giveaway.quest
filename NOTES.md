@@ -502,7 +502,9 @@ scopes) covering every repo the account can touch — too broad for what's
 meant to be one task doing one thing to one repo, especially once an agent
 is the one running `invoke release`. Instead `GH_TOKEN` in `.env` is meant
 to be a *fine-grained* PAT scoped to just this repository with only
-"Contents: read and write" (the minimum release creation needs). Missing
+"Contents: read and write" (the minimum release creation needs). The `release`
+GitHub Actions workflow passes its own short-lived `GITHUB_TOKEN` (scoped to
+this repo, `contents: write`) as `GH_TOKEN` instead. Missing
 `GH_TOKEN` prints a message and skips the release rather than failing the
 whole task — the tag/push already happened and shouldn't be undone over a
 release that's easy to create by hand afterwards.
