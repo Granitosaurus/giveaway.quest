@@ -1,3 +1,3 @@
 """giveaway.quest - give away digital codes to verified Fediverse people."""
 
-__version__ = "1.2.5"
+__version__ = "1.2.6"
