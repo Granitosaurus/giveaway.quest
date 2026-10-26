@@ -193,11 +193,12 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
 - **Ship new code**: cut a release (below); production deploys release tags
   only. `uv run invoke deploy` (run every 5 min by
   `giveaway-quest-deploy.timer`) fetches tags, and if the newest `v*` tag is
-  on `main` and isn't what's running, checks it out and rebuilds. Rebuilding
-  force-recreates the app container — plain `podman-compose up -d --build`
-  does *not* recreate an already-running container just because its image
-  changed, so the old code would keep serving silently. `GQ_VERSION` (the tag)
-  goes into the container and the footer, so you can tell a deploy landed.
+  on `main` and isn't what's running, checks it out, rebuilds the app image
+  and restarts `giveaway-quest-compose.service`, which recreates both
+  containers from `docker-compose.yml` (picking up new images — plain
+  `podman-compose up -d` never moves a running container to a new one) and
+  keeps them owned by that unit. `GQ_VERSION` (the tag) goes into the
+  container and the footer, so you can tell a deploy landed.
 - **Rebuild what's checked out** (no git changes): `uv run invoke redeploy`.
 - **Cut a release**: `uv run invoke release major|minor|patch` from a dev
   checkout, or the **release** workflow's "Run workflow" button on GitHub
