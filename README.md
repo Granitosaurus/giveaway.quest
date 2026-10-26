@@ -231,7 +231,9 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   no manual steps.
 
 Backups are consistent sqlite snapshots made with the backup API, so they
-are safe to copy off-site with rsync/rclone from `data/backups/`.
+are safe to copy off-site from `data/backups/`. With `BACKUP_RCLONE_REMOTE`
+set, `backup` does that after every snapshot with `rclone copy --immutable`
+(add-only; see `.env.example` for the intended append-only remote).
 
 ### Host firewall: containers can't reach the tailnet
 

@@ -326,13 +326,20 @@ def backup(c):
 
     The rotation needs `podman unshare` because the app container owns
     data/backups under its rootless-mapped UID, not the host user's.
+
+    With BACKUP_RCLONE_REMOTE set, new snapshots are then copied off-site.
+    `copy --immutable`, never `sync`: the remote's credentials can add files
+    but not delete or overwrite them (so a compromised host can't wipe its
+    own backup history), and remote retention is the bucket's lifecycle
+    rule's job, not ours.
     """
     with c.cd(str(ROOT)):
         c.run(f"{PODMAN_COMPOSE} exec -T app gq backup --keep 48")
         c.run(f"podman unshare bash -c {shlex.quote(_ROTATE_SCRIPT)}")
         remote = os.environ.get("BACKUP_RCLONE_REMOTE")
         if remote:
-            c.run(f"podman unshare rclone sync data/backups {shlex.quote(remote)} --quiet")
+            dest = shlex.quote(remote)
+            c.run(f"podman unshare rclone copy --immutable data/backups {dest} --quiet")
 
 
 DOCKERFILE = ROOT / "Dockerfile"
