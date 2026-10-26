@@ -212,8 +212,8 @@ container; `tasks.py` runs on the host and shells out to `podman-compose`,
   `release` only makes the version bump commit.
   Add a bullet to `NEW.md` per notable change as you work; `release` uses
   whatever's there as the GitHub release notes and empties the file back to
-  its instructional comment. An empty `NEW.md` just skips the GitHub
-  release — the tag is still cut and pushed.
+  its instructional comment. With an empty `NEW.md` the release gets
+  GitHub's generated notes instead (the merged PRs since the last release).
   The GitHub release itself needs a `GH_TOKEN` (the workflow uses its own
   `GITHUB_TOKEN`; locally, put one in `.env`): a
   [fine-grained personal access token](https://github.com/settings/personal-access-tokens)

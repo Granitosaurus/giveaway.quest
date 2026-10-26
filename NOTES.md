@@ -490,10 +490,11 @@ tag, so the actual changelog history lives as GitHub releases (one per
 tag), not as an ever-growing file in the repo. `NEW.md` itself is then
 truncated back to just the comment and committed as part of the
 version-bump commit, ready for the next round. An empty `NEW.md` (nobody
-wrote anything since the last release) skips release creation entirely
-rather than erroring or creating an empty release — the tag is still cut,
-annotated, and pushed either way, so `release` never *requires* a
-changelog entry.
+wrote anything since the last release) still gets a release, with GitHub's
+generated notes (`generate_release_notes`: the merged PRs since the previous
+tag) as its body -- skipping it entirely, as this used to, left tags like
+v1.2.5 with no release page at all. So `release` never *requires* a
+changelog entry, but every tag still shows up under Releases.
 
 **Release creation hits the GitHub REST API directly with `httpx` (already
 a dependency) instead of shelling out to the `gh` CLI.** `gh auth login`

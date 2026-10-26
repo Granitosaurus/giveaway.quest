@@ -185,7 +185,9 @@ def _github_repo(c) -> tuple[str, str]:
 
 
 def _create_github_release(c, tag: str, notes: str) -> None:
-    """POST a GitHub release for `tag` with `notes` as its body.
+    """POST a GitHub release for `tag` with `notes` as its body -- or, when
+    `notes` is empty (nothing added to NEW.md), with GitHub's generated notes
+    (merged PRs since the previous release), so every tag gets a release page.
 
     Needs `GH_TOKEN` in `.env` -- a fine-grained PAT scoped to just this repo
     with "Contents: read and write" permission (that's what release creation
@@ -198,6 +200,8 @@ def _create_github_release(c, tag: str, notes: str) -> None:
         print("GH_TOKEN not set in .env -- skipped the GitHub release, tag was still pushed")
         return
     owner, repo = _github_repo(c)
+    payload = {"tag_name": tag, "name": tag}
+    payload |= {"body": notes} if notes else {"generate_release_notes": True}
     try:
         resp = httpx.post(
             f"https://api.github.com/repos/{owner}/{repo}/releases",
@@ -206,7 +210,7 @@ def _create_github_release(c, tag: str, notes: str) -> None:
                 "Accept": "application/vnd.github+json",
                 "X-GitHub-Api-Version": "2022-11-28",
             },
-            json={"tag_name": tag, "name": tag, "body": notes},
+            json=payload,
             timeout=15,
         )
         resp.raise_for_status()
@@ -232,8 +236,9 @@ def release(c, part):
     NEW.md is the running changelog: add a bullet per notable change as you
     work. Whatever is in it becomes the GitHub release's notes, then the
     file is emptied back to its instructional comment as part of the
-    version-bump commit. An empty NEW.md, or no GH_TOKEN in .env, just skips
-    the GitHub release -- the tag is still cut and pushed either way.
+    version-bump commit. An empty NEW.md gets GitHub's generated notes (merged
+    PRs) instead; no GH_TOKEN skips the GitHub release -- the tag is still cut
+    and pushed either way.
     """
     if part not in ("major", "minor", "patch"):
         raise SystemExit(f"part must be major, minor or patch, not {part!r}")
@@ -277,10 +282,7 @@ def release(c, part):
         c.run("git push")
         c.run(f"git push origin {tag}")
 
-        if notes:
-            _create_github_release(c, tag, notes)
-        else:
-            print("NEW.md was empty -- tag pushed, no GitHub release created")
+        _create_github_release(c, tag, notes)
 
     deploy_host = os.environ.get("GQ_DEPLOY_HOST")
     if deploy_host:
