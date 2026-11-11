@@ -45,12 +45,16 @@ RUN set -eux; \
     tailwindcss -i assets/app.css -o out/app.css --minify
 
 # ---- Python runtime ----
-FROM python:3.13-slim@sha256:98ce6fb13b3803744fbca11434f00818f1e300e4e48a4f204e07b2c928b6218e AS runtime
+FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf1070bc106ee9ed90 AS runtime
 COPY --from=ghcr.io/astral-sh/uv:0.13.4@sha256:9f130421e930bfbdc563c00740466603f8723158e90297d07957c2294640262b /uv /usr/local/bin/uv
+# Debian security fixes land days before the official image is rebuilt on
+# them (Trivy flags the gap), so apply them here rather than wait.
 # uv does all installing, so drop the base image's pip (and ensurepip's spare
 # wheel): its vendored certifi/urllib3/msgpack lag behind and are what Trivy
 # kept flagging, while nothing at runtime uses them.
-RUN python -m pip uninstall -y --root-user-action=ignore pip \
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && python -m pip uninstall -y --root-user-action=ignore pip \
     && rm -rf /usr/local/lib/python3.13/ensurepip/_bundled \
     && useradd --system --create-home --uid 10001 giveaway
 WORKDIR /app
