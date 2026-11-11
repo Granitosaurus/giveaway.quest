@@ -512,3 +512,23 @@ def test_md_preview_endpoint(client):
     )
     assert resp.status_code in (200, 201)
     assert "<h1>Hi</h1>" in resp.text and "<em>there</em>" in resp.text
+
+
+def test_index_defaults_to_all_newest(client):
+    login_as(client, make_user("host@example.social"))
+    ended = create_giveaway(client)
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE giveaways SET ends_at = ?, drawn_at = ?, created_at = ? WHERE slug = ?",
+            (
+                db.iso(db.now() - timedelta(hours=1)),
+                db.iso(db.now()),
+                "2000-01-01T00:00:00Z",
+                ended,
+            ),
+        )
+    newer = create_giveaway(client)
+    page = client.get("/").text
+    assert ended in page and newer in page  # ended giveaways listed by default
+    assert page.index(newer) < page.index(ended)  # newest first
+    assert ended not in client.get("/?status=open").text

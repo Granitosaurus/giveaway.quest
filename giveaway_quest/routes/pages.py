@@ -53,16 +53,16 @@ def index(
     request: Request,
     user: NamedDependency[dict | None],
     page: FromQuery[int] = 1,
-    sort: FromQuery[str] = "ending",
-    status: FromQuery[str] = "open",
+    sort: FromQuery[str] = "newest",
+    status: FromQuery[str] = "all",
     q: FromQuery[str] = "",
 ) -> Template:
     page = max(page, 1)
     q = q.strip()[:80]
     if sort not in services.SORTS:
-        sort = "ending"
+        sort = "newest"
     if status not in {"open", "ended", "all"}:
-        status = "open"
+        status = "all"
     with db.connect() as conn:
         giveaways, total = services.list_giveaways(conn, page=page, sort=sort, status=status, q=q)
     pages = max((total + services.PAGE_SIZE - 1) // services.PAGE_SIZE, 1)
