@@ -128,6 +128,38 @@
         "ghcr.io/astral-sh/uv"
       ],
       "groupName": "uv"
+    },
+    {
+      "description": "The github-actions manager also reads setup-uv's `version:` input as astral-sh/uv; the regex manager above already tracks that line as pypi uv, so this copy only made duplicate PRs (and pinDigests would swap the version for a commit sha)",
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchDepNames": [
+        "astral-sh/uv"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Python minor upgrades touch the Dockerfile, flake.nix (python313) and CI (python-version) together; do them by hand, let Renovate bring only patches/digests",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchDepNames": [
+        "python"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "ruff is pinned in CI (pypi) and pre-commit; keep them on one version",
+      "matchDepNames": [
+        "ruff",
+        "astral-sh/ruff-pre-commit"
+      ],
+      "groupName": "ruff"
     }
   ]
 }
