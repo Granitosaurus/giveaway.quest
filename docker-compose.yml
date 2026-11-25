@@ -17,7 +17,7 @@ services:
 
   cloudflared:
     # Pinned by digest (it holds the tunnel token); Renovate opens PRs to bump it.
-    image: docker.io/cloudflare/cloudflared:2026.10.4@sha256:c6c7ae1d5dfdcb094ad344ed68ccffc26635c9c6be80965664c33baf064b0515
+    image: docker.io/cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     restart: unless-stopped
     command: tunnel run
     # Its own env file, not .env: `app` gets every .env variable (env_file),
