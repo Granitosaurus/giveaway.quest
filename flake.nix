@@ -16,7 +16,7 @@
       ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      daisyuiVersion = "5.7.28";
+      daisyuiVersion = "5.8.2";
       daisyui =
         pkgs:
         pkgs.fetchurl {

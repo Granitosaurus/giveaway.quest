@@ -10,11 +10,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && rm -rf /var/lib/apt/lists/*
 ARG TARGETARCH
 # renovate: datasource=github-releases depName=tailwindlabs/tailwindcss
-ARG TAILWIND_VERSION=v4.3.3
+ARG TAILWIND_VERSION=v4.3.5
 ARG TAILWIND_SHA256_AMD64=dc61b3ac6b8c9ca874c0cc4c57b2409791a64c5540404ca5f5367360babc313a
 ARG TAILWIND_SHA256_ARM64=55fd0b241214eff3de1e8ee4f22796662f2d2e7a49bcfca7477cfd0bac398195
 # renovate: datasource=github-releases depName=saadeghi/daisyui
-ARG DAISYUI_VERSION=5.7.28
+ARG DAISYUI_VERSION=5.8.2
 ARG DAISYUI_SHA256=f5085284bb5622a9bafcda9108a149b063bca73cab5eede5f0f17a5006e02847
 ARG DAISYUI_THEME_SHA256=c915fae9cc53c1a80ce8251cd1edea635c5b3c640c0afdc5269340ec03c687f3
 WORKDIR /build
